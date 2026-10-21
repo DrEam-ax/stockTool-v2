@@ -1,0 +1,70 @@
+# ============ 凭据：绝对不能进版本库 ============
+config/xueqiu_cookie.txt
+config/llm_api_key.txt
+config/settings.json
+.env
+.env.*
+*.pem
+*.key
+*.keystore
+*.jks
+
+# 推送前敏感词清单：里面写着真实人物标识，
+# 脚本读它做检查，但清单本身绝不能进库（否则等于又泄漏一次）
+tools/.prepush-forbidden.txt
+
+# ============ 抓取的语料与派生内容 ============
+# 原始帖子与整库快照体积大，而且是**真实人物的作品**。
+# 本仓库是公开的，推上去等于转载 + 公开对具名人物的评价，所以默认排除。
+# 要把它们也备份，请先把仓库改成私有，再显式放行：
+#   git add -f data/raw/ data/kb/out_evidence.stkb data/kb/out_fulltext.stkb
+data/raw/
+data/stocktool.db
+data/stocktool.db-wal
+data/stocktool.db-shm
+data/kb/*.stkb
+
+# 白名单：只有合成演示库可以进库（不是真实人物）
+!data/kb/demo_junshi_*.stkb
+!data/seed/
+
+reports/
+
+# ============ 前端依赖与构建产物 ============
+app/node_modules/
+app/dist/
+app/tests/smoke.mjs
+app/.vite/
+app/*.tsbuildinfo
+
+# ============ Android 构建产物 ============
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/capacitor-cordova-android-plugins/
+app/android/.idea/
+app/android/local.properties
+app/android/app/src/main/assets/public/
+# 只排除拷贝进去的 Web 产物；android 工程本身的源码要进库
+
+# ============ 打包产物 ============
+dist/
+*.apk
+*.aab
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ============ 工具与系统 ============
+node_modules/
+*.log
+*.tmp
+*.tmpdir/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

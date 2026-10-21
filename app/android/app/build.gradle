@@ -1,0 +1,76 @@
+apply plugin: 'com.android.application'
+
+// 版本号的**单一来源**：android/version.properties，由 app/scripts/sync-version.mjs
+// 从 package.json 生成。
+//
+// 为什么不能像以前那样写死：文件名写着 v1.3、包内却是 1.0，
+// 装机时系统显示的是包内的 versionName，用户根本分不清装的是哪一版；
+// 而且 versionCode 不变，系统会认为它们**是同一个版本**，覆盖安装都可能出问题。
+//
+// 注意：值必须在 android{} 闭包**外面**先用局部变量算好。
+// 直接在 defaultConfig 闭包里读 Properties 会拿到 null ——
+// Groovy DSL 闭包对脚本级变量的解析有歧义，实测报 "Value is null"。
+def vCode = 1
+def vName = "0.0"
+def vFile = rootProject.file("version.properties")
+if (vFile.exists()) {
+    def vProps = new Properties()
+    vFile.withInputStream { vProps.load(it) }
+    vCode = (vProps.getProperty("versionCode") ?: "1").toInteger()
+    vName = vProps.getProperty("versionName") ?: "0.0"
+} else {
+    logger.warn("[version] 没找到 ${vFile}，将使用默认版本 ${vName}。请先跑 npm run sync-version")
+}
+
+android {
+    namespace = "com.stocktool.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.stocktool.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode vCode
+        versionName vName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

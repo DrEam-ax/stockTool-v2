@@ -1,0 +1,5 @@
+# pnpm 11 用 allowBuilds（映射）而不是 onlyBuiltDependencies（列表）。
+# esbuild 的平台二进制虽由 optionalDependencies 提供，
+# 但它的 postinstall 需要显式放行，否则 pnpm install 会以非零码退出。
+allowBuilds:
+  esbuild: true

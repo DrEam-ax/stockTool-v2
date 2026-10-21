@@ -1,0 +1,13 @@
+# P0 阶段零新增依赖：只用 requests（D:\Python\python.exe 已自带）
+#
+# 刻意不装 akshare —— 它依赖树庞大，在 Python 3.13 / pandas 3.x 上容易炸，
+# 而我们只需要「日线 + 标的清单」两件事，直连行情接口更可控。
+#
+# 官方 PyPI 在本机超时，装包请用镜像：
+#   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+requests>=2.31
+
+# ---- 后续接入音视频 ASR 时才需要（现在不装）----
+# faster-whisper>=1.0
+# （需要 CUDA 版 torch，安装方式见 README 的「音视频 ASR 配置建议」）
