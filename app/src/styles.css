@@ -21,7 +21,34 @@
   --radius: 12px;
   --radius-sm: 8px;
   --tabbar-h: 56px;
-  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 顶部 / 底部安全区。
+     优先级：Capacitor 注入的变量 → CSS 原生 env() → 0。
+     Capacitor 8 的 insetsHandling 默认是 "css"，它会往
+     documentElement 上写 --safe-area-inset-top/right/bottom/left，
+     所以优先用它；普通浏览器里两个都没有，退回 0，布局不变。 */
+  --safe-t: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-b: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-l: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --safe-r: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+/* 顶部状态栏遮挡条。
+   Android 15+ 对 targetSdk >= 35 强制「边到边」，WebView 会一直画到屏幕顶端，
+   于是页面标题会和状态栏的时间/电量叠在一起。
+   这里用一条固定定位的纯色条盖住那块区域，同时给内容加顶部内边距让开。
+   用 fixed 而不是给 body 加 padding：后者会跟着页面滚动，
+   往下滑时内容又会钻到状态栏下面。
+   z-index 45：压住页面内容与底栏(40)，但低于弹层(60)。 */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-t);
+  background: var(--bg);
+  z-index: 45;
+  pointer-events: none;
 }
 
 * {
@@ -65,12 +92,15 @@ a {
 
 /* ---------- 布局 ---------- */
 .page {
-  padding: 14px 14px calc(var(--tabbar-h) + var(--safe-b) + 20px);
+  /* 顶部额外加安全区，让开状态栏那条 */
+  padding: calc(14px + var(--safe-t)) calc(14px + var(--safe-r))
+    calc(var(--tabbar-h) + var(--safe-b) + 20px) calc(14px + var(--safe-l));
   max-width: 720px;
   margin: 0 auto;
 }
 
 .page-full {
+  padding-top: var(--safe-t);
   padding-bottom: calc(var(--tabbar-h) + var(--safe-b));
   height: 100dvh;
   display: flex;
@@ -284,8 +314,11 @@ textarea {
   cursor: pointer;
 }
 
-/* 只作用于**直接子级复选框**�?   以前写的�?`.check input`（后代选择器）—�?特异�?(0,1,1) �?   `input[type='text']` 完全相同，而它写在后面，于是把嵌套�?label 里的
-   文本/数字输入框也压成�?16×16，用户看到的是一堆空的小方块�?   改成 `>` + 限定 checkbox 之后，文本输入框不会再被波及�?*/
+/* 只作用于**直接子级复选框**。
+   以前写的是 `.check input`（后代选择器）—— 特异性 (0,1,1) 与
+   `input[type='text']` 完全相同，而它写在后面，于是把嵌套在 label 里的
+   文本/数字输入框也压成了 16×16，用户看到的是一堆空的小方块。
+   改成 `>` + 限定 checkbox 之后，文本输入框不会再被波及。 */
 .check > input[type='checkbox'] {
   margin-top: 3px;
   width: 16px;
@@ -302,12 +335,15 @@ textarea {
 }
 
 /* 模式选择：这是产品最核心的一个选择，要做得足够显眼 */
-/* 版本卡片：让用户一眼确认装的是哪一�?*/
+/* 版本卡片：让用户一眼确认装的是哪一版 */
 .ver-card {
   background: var(--bg-2);
 }
 
-/* 密钥遮蔽�?   �?CSS 而不�?type="password" —�?Android WebView 在动态切�?input type �?   会清空输入值，用户会以�?填好�?key 自己消失�?�?   -webkit-text-security �?Chromium / Android WebView 都支持�?*/
+/* 密钥遮蔽。
+   用 CSS 而不是 type="password" —— Android WebView 在动态切换 input type 时
+   会清空输入值，用户会以为"填好的 key 自己消失了"。
+   -webkit-text-security 在 Chromium / Android WebView 都支持。 */
 .key-masked {
   -webkit-text-security: disc;
   letter-spacing: 0.5px;
@@ -638,11 +674,11 @@ textarea {
 }
 
 .thinking summary::before {
-  content: '�?';
+  content: '▸';
 }
 
 .thinking[open] summary::before {
-  content: '�?';
+  content: '▾';
 }
 
 .thinking div {

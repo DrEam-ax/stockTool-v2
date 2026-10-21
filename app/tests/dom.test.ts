@@ -162,3 +162,56 @@ describe('样式不会把 .check 里的文本输入框压扁', () => {
     expect(/input\[type=['"]text['"]\][\s\S]{0,200}width:\s*100%/.test(css)).toBe(true)
   })
 })
+
+/**
+ * 状态栏遮挡 + CSS 文件本身必须是合法 UTF-8。
+ *
+ * 背景：Android 15+ 对 targetSdk >= 35 强制「边到边」，WebView 会画到屏幕顶端，
+ * 页面标题和时间/电量叠在一起。Capacitor 8 的 insetsHandling 默认是 "css"，
+ * 它会注入 --safe-area-inset-top 等变量 —— 但样式表必须真的去用它，否则等于没注入。
+ *
+ * 另一个更隐蔽的坑：有人用 PowerShell 的 Set-Content（默认 ANSI）
+ * 写回过这个文件，中文注释被替换成 `?`、多字节序列被截断，文件不再是合法 UTF-8。
+ * 浏览器能容错渲染，所以肉眼看不出来 —— 必须由测试守住。
+ */
+describe('状态栏安全区（Android 15 边到边）', () => {
+  const raw = readFileSync(resolve(__dirname, '../src/styles.css'))
+  const cssText = raw.toString('utf8')
+
+  it('styles.css 是合法 UTF-8（防 ANSI 写回损坏）', () => {
+    // toString('utf8') 会用 U+FFFD 替换非法字节，所以查替换字符最直接
+    expect(cssText.includes('\uFFFD')).toBe(false)
+    // 再确认能严格解码
+    expect(() => new TextDecoder('utf-8', { fatal: true }).decode(raw)).not.toThrow()
+  })
+
+  it('定义了 --safe-t / --safe-b，且优先用 Capacitor 注入的变量', () => {
+    expect(/--safe-t:\s*var\(--safe-area-inset-top/.test(cssText)).toBe(true)
+    expect(/--safe-b:\s*var\(--safe-area-inset-bottom/.test(cssText)).toBe(true)
+    // 必须有 env() 兜底，否则 Capacitor 没注入时会全 0
+    expect(/--safe-t:[^;]*env\(safe-area-inset-top/.test(cssText)).toBe(true)
+  })
+
+  it('页面顶部让开了安全区', () => {
+    // .page 的 padding-top 里必须含 --safe-t
+    const pageBlock = /\.page\s*\{[^}]*\}/.exec(cssText)?.[0] ?? ''
+    expect(pageBlock).toContain('--safe-t')
+  })
+
+  it('有一条固定的纯色遮挡条（滚动了也不会被内容盖住）', () => {
+    const before = /body::before\s*\{[^}]*\}/.exec(cssText)?.[0] ?? ''
+    expect(before).toContain('position: fixed')
+    expect(before).toContain('height: var(--safe-t)')
+    expect(before).toContain('background: var(--bg)')
+    // 不能吃点击事件（纯装饰）
+    expect(before).toContain('pointer-events: none')
+  })
+
+  it('遮挡条的层级在内容之上、弹层之下', () => {
+    const before = /body::before\s*\{([^}]*)\}/.exec(cssText)?.[1] ?? ''
+    const z = Number(/z-index:\s*(\d+)/.exec(before)?.[1] ?? NaN)
+    expect(Number.isFinite(z)).toBe(true)
+    expect(z).toBeGreaterThan(40) // 高于底栏
+    expect(z).toBeLessThan(60) // 低于弹层
+  })
+})
