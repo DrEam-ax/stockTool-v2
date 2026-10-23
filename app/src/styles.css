@@ -91,6 +91,22 @@ a {
 }
 
 /* ---------- 布局 ---------- */
+/* 挤占自查（2026-10-23）：
+   手机上常见的「元素互相挤」几乎都来自三个原因，这里统一堵掉：
+     1. flex 行不换行 → 长标题把徽章/按钮挤出屏幕
+     2. flex/grid 子项默认 min-width:auto → 内容不肯缩，撑破容器
+     3. 徽章会被 flex 压扁 → 文字折行变成两行小方块 */
+.hdr h1 {
+  font-size: 17px;
+  margin: 0;
+  flex: 1;
+  font-weight: 600;
+  min-width: 0; /* 没有它，长会话名会把「清空」按钮顶出屏幕 */
+  overflow-wrap: anywhere;
+}
+.hdr .btn {
+  flex-shrink: 0; /* 按钮永远不被文字挤扁 */
+}
 .page {
   /* 顶部额外加安全区，让开状态栏那条 */
   padding: calc(14px + var(--safe-t)) calc(14px + var(--safe-r))
@@ -172,6 +188,11 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* 长名称 + 徽章要能换行，否则在窄屏上互相挤压 */
+  flex-wrap: wrap;
+  row-gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .card-meta {
@@ -406,7 +427,9 @@ textarea {
   align-items: center;
   gap: 7px;
   font-size: 14px;
-}
+
+  flex-wrap: wrap;
+  row-gap: 4px;}
 
 .mode-icon {
   font-size: 15px;
@@ -427,7 +450,9 @@ textarea {
   background: var(--bg-2);
   border: 1px solid var(--line);
   color: var(--fg-dim);
-}
+
+  max-width: 100%;
+  overflow-wrap: anywhere;}
 
 .chip.on {
   background: var(--accent-dim);
@@ -445,6 +470,9 @@ textarea {
   border-radius: 5px;
   background: var(--bg-3);
   color: var(--fg-dim);
+  /* 徽章不能被 flex 压成两行小方块 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .badge.up {
@@ -617,7 +645,10 @@ textarea {
   padding: 5px 9px;
   cursor: pointer;
   line-height: 1.4;
-}
+
+  flex-wrap: wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;}
 
 .tool-row.err {
   border-color: #4a2b2b;
@@ -763,11 +794,21 @@ textarea {
   background: var(--bg-2);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+  /* grid 子项默认 min-width:auto，金额位数一多就会撑破格子 */
+  min-width: 0;
 }
 
 .stat .k {
   font-size: 11px;
   color: var(--fg-mute);
+}
+
+/* 金额可能很长（十万级基金账户），给一格自适应字号兜底：
+   窄屏/大数自动缩小，不换行也不撑破卡片 */
+.grid3 .stat .v {
+  font-size: clamp(13px, 3.9vw, 16px);
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .stat .v {
@@ -887,7 +928,8 @@ textarea {
   cursor: pointer;
   flex: none;
   transition: background 0.15s;
-}
+
+  flex-shrink: 0;}
 
 .switch.on {
   background: var(--accent);
@@ -960,4 +1002,32 @@ textarea {
     max-height: 84dvh;
     padding-bottom: 20px;
   }
+}
+
+/* ---------- 键盘弹出时收起底栏 ----------
+   底栏是 fixed bottom:0，键盘弹出后视口变矮，它就贴在键盘上沿白占 56px。
+   收起来把空间让给输入区（微信等主流 App 的做法）。
+   lib/keyboard.ts 通过 visualViewport 高度变化判断键盘状态。 */
+.tabbar {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+html.kbd-open .tabbar {
+  transform: translateY(110%);
+  opacity: 0;
+  pointer-events: none;
+}
+/* 底栏收走后，页面底部不再需要给它留位置 */
+html.kbd-open .page {
+  padding-bottom: calc(var(--safe-b) + 16px);
+}
+html.kbd-open .page-full {
+  padding-bottom: var(--safe-b);
+}
+
+/* space-between 行：左右两侧都要能缩，按钮不能被右边文字挤出屏幕 */
+.spread > * {
+  min-width: 0;
+}
+.spread .btn {
+  flex-shrink: 0;
 }

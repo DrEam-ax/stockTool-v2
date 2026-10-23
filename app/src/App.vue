@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProviders } from '@/stores/providers'
 import { useKnowledge } from '@/stores/knowledge'
 import { useMemory } from '@/stores/memory'
+import { installKeyboardWatcher } from '@/lib/keyboard'
 
 const route = useRoute()
 const { load: loadProviders, providers } = useProviders()
 const knowledge = useKnowledge()
 const memory = useMemory()
+let uninstallKbd: (() => void) | null = null
 
 // 会话详情也归属「会话」这个 Tab，否则底部导航会在进入聊天后失去高亮
 const activeTab = computed(() => {
@@ -28,8 +30,12 @@ const setupHint = computed(() => {
 })
 
 onMounted(async () => {
+  // 键盘弹出时收起底栏，把空间让给输入区
+  uninstallKbd = installKeyboardWatcher()
   await Promise.all([loadProviders(), knowledge.load(), memory.load()])
 })
+
+onUnmounted(() => uninstallKbd?.())
 </script>
 
 <template>

@@ -25,6 +25,7 @@ import { availablePersonas, personaToPrompt } from '../src/services/persona'
 import { buildAuditPrompt } from '../src/services/audit'
 import { listModels } from '../src/services/llm'
 import { toPlain } from '../src/lib/db'
+import { describeDca, monthlyDcaAmount, isDcaActive } from '../src/lib/dca'
 import { reactive } from 'vue'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -492,6 +493,65 @@ async function main() {
   check('校验失败都有可见提示（没有裸 return）',
     !/if \(!p\.baseUrl\.trim\(\)\) return\b/.test(settingsSrc2),
     '又出现了静默 return —— 用户点保存会以为没反应')
+
+  // ---------- 定投 ----------
+  section('[N] 定投（军师判断操作时必须区分「持续买入」和「一次性买入」）')
+  check('开启后能描述出周期与金额',
+    describeDca({ enabled: true, period: 'monthly', amount: 500 }) === '每月 ¥500',
+    describeDca({ enabled: true, period: 'monthly', amount: 500 }))
+  check('指定每月几号时优先用日期',
+    describeDca({ enabled: true, period: 'monthly', amount: 500, dayOfPeriod: 15 })
+      .includes('15 号'),
+    describeDca({ enabled: true, period: 'monthly', amount: 500, dayOfPeriod: 15 }))
+  check('按周定投描述成「周几」',
+    /周[一二三四五六日]/.test(
+      describeDca({ enabled: true, period: 'weekly', amount: 200, dayOfPeriod: 3 }),
+    ))
+  check('关闭状态不产出描述',
+    describeDca({ enabled: false, period: 'monthly', amount: 500 }) === '')
+  check('金额缺失时明确说「未填」而不是显示 ¥0',
+    describeDca({ enabled: true, period: 'monthly' }).includes('未填'))
+  check('isDcaActive 只认 enabled',
+    isDcaActive({ enabled: true, period: 'monthly' }) && !isDcaActive({ enabled: false, period: 'monthly' }))
+
+  const dcaMonthly = monthlyDcaAmount({ enabled: true, period: 'weekly', amount: 100 })
+  check('每周期折算成月均（100/周 ≈ 433/月）',
+    Math.abs(dcaMonthly - 433.3) < 1, String(dcaMonthly))
+  check('双周折算成月均（100/两周 ≈ 216/月）',
+    Math.abs(monthlyDcaAmount({ enabled: true, period: 'biweekly', amount: 100 }) - 216.7) < 1)
+  check('月定投折算等于本身',
+    monthlyDcaAmount({ enabled: true, period: 'monthly', amount: 500 }) === 500)
+  check('未开启定投折算为 0',
+    monthlyDcaAmount({ enabled: false, period: 'monthly', amount: 500 }) === 0)
+
+  // 提示词里必须真的带上定投，否则军师看不到，功能等于白做
+  const dcaPrompt = buildSystemPrompt({
+    kbs: [],
+    question: '我这几个持仓怎么样',
+    hasTools: false,
+    memory: {
+      profile: {},
+      facts: [],
+      holdings: [
+        {
+          id: 'h1', name: '示例ETF联接A', marketValue: 10000, confirmed: true,
+          source: 'manual', firstSeenAt: '', updatedAt: '',
+          dca: { enabled: true, period: 'monthly', amount: 500 },
+        },
+        {
+          id: 'h2', name: '示例股票B', marketValue: 20000, confirmed: true,
+          source: 'manual', firstSeenAt: '', updatedAt: '',
+        },
+      ],
+    },
+  })
+  check('系统提示词里出现定投信息', dcaPrompt.includes('定投：'))
+  check('系统提示词里出现月均合计', /合计每月约/.test(dcaPrompt), '')
+  check('提示词明确告诉模型「定投不是一次性抄底」',
+    dcaPrompt.includes('不要当成一次性') || dcaPrompt.includes('持续买入'),
+    '模型会把自动扣款当成高位补仓来批评')
+  check('没定投的持仓不会凭空多出定投字段',
+    !/示例股票B[^\n]*定投/.test(dcaPrompt))
 
   report()
 }

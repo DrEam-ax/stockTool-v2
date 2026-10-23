@@ -22,6 +22,7 @@ import type {
 } from '@/types'
 import { hitStats, verdict, type HitStats } from '@/lib/stats'
 import { fmtDate, fmtPct, fmtSignedPct } from '@/lib/fmt'
+import { describeDca, isDcaActive, monthlyDcaAmount } from '@/lib/dca'
 import { matchSubjects } from './kb'
 import { findPersona, personaToPrompt } from './persona'
 import { buildAuditSystemPrompt } from './audit'
@@ -203,8 +204,20 @@ function formatMemory(mem: MemoryContext): string {
       if (h.profitPct != null) seg.push(`盈亏 ${fmtSignedPct(h.profitPct)}`)
       else if (h.profitAmount != null) seg.push(`盈亏 ${h.profitAmount.toFixed(0)}`)
       if (h.costPrice != null) seg.push(`成本 ${h.costPrice}`)
+      // 定投一定要写进去：它是持续进行的操作，不是一次性买入。
+      // 不写的话，军师会把他自动扣款当成「又在高位补仓」来批评。
+      const dca = describeDca(h.dca)
+      if (dca) seg.push(`定投：${dca}`)
       if (h.note) seg.push(`备注：${h.note}`)
       lines.push(`  - ${seg.join('，')}`)
+    }
+    const dcaList = confirmed.filter((h) => isDcaActive(h.dca))
+    if (dcaList.length) {
+      const monthly = confirmed.reduce((s, h) => s + monthlyDcaAmount(h.dca), 0)
+      lines.push(
+        `（${dcaList.length} 只在定投，合计每月约 ¥${Math.round(monthly)}。` +
+          '定投是持续买入，判断时要考虑它的摊薄作用，不要当成一次性抄底。）',
+      )
     }
   } else {
     lines.push('\n当前持仓：未录入')

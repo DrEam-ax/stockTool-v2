@@ -71,9 +71,13 @@ describe('持仓核对卡片：识别出来的内容必须真的看得见', () =
 
   it('字段缺失时显示 placeholder 而不是崩掉', () => {
     const { w } = mountCard({ costPrice: undefined, lastPrice: undefined })
-    // 1 复选框 + 1 名称 + 6 个数字字段 = 8
+    // 1 复选框 + 1 名称 + 6 个数字字段 = 8；
+    // 定投关着时只有那一个「这是一笔定投」复选框，不再多出输入框
     const inputs = w.findAll('input')
-    expect(inputs.length).toBe(8)
+    const amountInput = inputs.find((i) => i.attributes('placeholder') === '每期金额')
+    expect(amountInput).toBeUndefined() // 定投未开启
+    const main = inputs.filter((i) => i.attributes('type') !== 'checkbox')
+    expect(main.length).toBe(7) // 名称 + 6 个数字字段
     const cost = inputs.find((i) => i.attributes('placeholder') === '成本价')
     expect(cost).toBeTruthy()
     expect((cost!.element as HTMLInputElement).value).toBe('')
@@ -213,5 +217,114 @@ describe('状态栏安全区（Android 15 边到边）', () => {
     expect(Number.isFinite(z)).toBe(true)
     expect(z).toBeGreaterThan(40) // 高于底栏
     expect(z).toBeLessThan(60) // 低于弹层
+  })
+})
+
+/**
+ * 元素互相挤占。
+ *
+ * 用户反馈手机上有几处元素互相压：长名称把徽章挤走、金额位数一多撑破格子。
+ * 根因是三条 CSS 默认行为，这里逐条钉住，避免以后又被改回去：
+ *   1. flex 行不换行
+ *   2. flex/grid 子项默认 min-width:auto（内容不肯缩）
+ *   3. 徽章参与压缩
+ */
+describe('布局：元素不能互相挤占', () => {
+  const css = readFileSync(resolve(__dirname, '../src/styles.css'), 'utf8')
+
+  function block(selector: string): string {
+    const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}')
+    return re.exec(css)?.[1] ?? ''
+  }
+
+  it('卡片标题允许换行（长名称 + 徽章不再互相挤）', () => {
+    expect(block('.card-title')).toContain('flex-wrap: wrap')
+  })
+
+  it('徽章不参与压缩、不折行', () => {
+    const b = block('.badge')
+    expect(b).toContain('flex-shrink: 0')
+    expect(b).toContain('white-space: nowrap')
+  })
+
+  it('统计卡可缩（金额位数多时不会撑破格子）', () => {
+    expect(block('.stat')).toContain('min-width: 0')
+  })
+
+  it('三宫格里的金额字号自适应', () => {
+    const b = block('.grid3 .stat .v')
+    expect(b).toMatch(/font-size:\s*clamp\(/)
+  })
+
+  it('顶部标题可缩、按钮不被挤扁', () => {
+    expect(block('.hdr h1')).toContain('min-width: 0')
+    expect(block('.hdr .btn')).toContain('flex-shrink: 0')
+  })
+
+  it('键盘弹出时底栏收起', () => {
+    expect(css).toMatch(/html\.kbd-open\s+\.tabbar\s*\{[^}]*transform:\s*translateY/)
+    // 收起后不能再吃点击，否则用户点不到底下的输入区
+    expect(css).toMatch(/html\.kbd-open\s+\.tabbar\s*\{[^}]*pointer-events:\s*none/)
+  })
+
+  // 逐页自查后补的几条，防止以后被改回去
+  it('上下文 chip 超长时不溢出', () => {
+    const b = block('.chip')
+    expect(b).toContain('max-width: 100%')
+    expect(b).toContain('overflow-wrap')
+  })
+
+  it('模式选择头可换行', () => {
+    expect(block('.mode-head')).toContain('flex-wrap: wrap')
+  })
+
+  it('工具 chip 可换行且能断长名', () => {
+    const b = block('.tool-row')
+    expect(b).toContain('flex-wrap: wrap')
+    expect(b).toContain('overflow-wrap')
+  })
+
+  it('space-between 行两侧都能缩、按钮不被挤走', () => {
+    expect(css).toMatch(/\.spread\s*>\s*\*\s*\{[^}]*min-width:\s*0/)
+    expect(css).toMatch(/\.spread\s+\.btn[^{]*\{[^}]*flex-shrink:\s*0/)
+  })
+
+  it('开关控件不被压扁', () => {
+    expect(block('.switch')).toContain('flex-shrink: 0')
+  })
+})
+
+describe('定投：识别结果卡片上能勾选周期和金额', () => {
+  it('默认没有定投，勾选后才出现周期与金额', async () => {
+    const { w, holding } = mountCard()
+    // 默认不显示定投输入
+    expect(w.text()).toContain('这是一笔定投')
+    expect(w.findAll('select').length).toBe(0)
+
+    // 勾上
+    const boxes = w.findAll("input[type='checkbox']")
+    const dcaBox = boxes[boxes.length - 1]
+    await dcaBox.setValue(true)
+    await w.vm.$nextTick()
+    expect(w.findAll('select').length).toBe(1)
+    // 周期下拉里要有周/双周/月三个选项
+    const opts = w.findAll('select option').map((o) => o.text())
+    expect(opts).toEqual(['每周', '每两周', '每月'])
+    expect(holding.dca?.enabled).toBe(true)
+  })
+
+  it('填了金额后给出人话预览', async () => {
+    const { w } = mountCard()
+    const boxes = w.findAll("input[type='checkbox']")
+    await boxes[boxes.length - 1].setValue(true)
+    await w.vm.$nextTick()
+    // 通过输入框写值，才能走 v-model（直接改对象 Vue 观察不到）
+    const amount = w
+      .findAll('input')
+      .find((i) => i.attributes('placeholder') === '每期金额')
+    expect(amount).toBeTruthy()
+    await amount!.setValue('500')
+    await w.vm.$nextTick()
+    expect(w.text()).toContain('¥500')
   })
 })

@@ -19,6 +19,8 @@ import {
 } from '@/services/memory'
 import { compressImage, fileToDataUrl } from '@/services/llm'
 import { fmtMoney, fmtSignedPct } from '@/lib/fmt'
+import { describeDca, isDcaActive, monthlyDcaAmount, DCA_PERIODS } from '@/lib/dca'
+import type { DcaPlan } from '@/lib/dca'
 import HoldingEditor from '@/components/HoldingEditor.vue'
 
 const memory = useMemory()
@@ -32,7 +34,7 @@ const error = ref('')
 const info = ref('')
 
 /** 待确认的截图识别结果 */
-const pending = ref<(ParsedHolding & { _checked: boolean; _id: string })[]>([])
+const pending = ref<(ParsedHolding & { _checked: boolean; _id: string; dca?: DcaPlan })[]>([])
 const pendingSummary = ref('')
 const pendingImages = ref<string[]>([])
 const showConfirm = ref(false)
@@ -122,6 +124,7 @@ async function confirmPending() {
       source: 'screenshot' as const,
       confirmed: true,
       note: h.note,
+      dca: h.dca?.enabled ? h.dca : undefined,
     })),
   )
   showConfirm.value = false
@@ -145,6 +148,7 @@ async function saveUnconfirmed() {
       source: 'screenshot' as const,
       confirmed: false,
       note: h.note,
+      dca: h.dca?.enabled ? h.dca : undefined,
     })),
   )
   showConfirm.value = false
@@ -160,12 +164,26 @@ async function confirmHolding(h: Holding) {
 }
 
 function editHolding(h: Holding) {
-  editingHolding.value = { ...h }
+  // 一定要先把 dca 初始化成完整对象：模板里 v-model 直接写 dca.period，
+  // 对象不存在时会静默不生效（输入框能打字但存不进去）。
+  editingHolding.value = {
+    ...h,
+    dca: {
+      enabled: !!h.dca?.enabled,
+      period: h.dca?.period ?? 'monthly',
+      amount: h.dca?.amount,
+      dayOfPeriod: h.dca?.dayOfPeriod,
+      startAt: h.dca?.startAt,
+      note: h.dca?.note,
+    },
+  }
 }
 
 async function saveHoldingEdit() {
   if (!editingHolding.value) return
   const h = editingHolding.value
+  // 没勾定投就把整块去掉，避免留下 enabled:false 的空壳污染导出
+  if (h.dca && !h.dca.enabled) h.dca = undefined
   await memory.updateHolding(h)
   const i = memory.holdings.value.findIndex((x) => x.id === h.id)
   if (i >= 0) memory.holdings.value[i] = h
@@ -395,6 +413,9 @@ const kindLabel: Record<string, string> = {
               {{ h.profitPct != null ? fmtSignedPct(h.profitPct) : fmtMoney(h.profitAmount) }}
             </span>
           </div>
+          <div v-if="isDcaActive(h.dca)" class="card-meta dca-line">
+            🔁 定投 {{ describeDca(h.dca) }}
+          </div>
         </div>
       </div>
       <div class="btn-row" style="margin-top: 8px">
@@ -543,6 +564,32 @@ const kindLabel: Record<string, string> = {
           <label>备注</label>
           <input v-model="editingHolding.note" type="text" />
         </div>
+
+        <!-- 定投：军师判断操作时要区分「持续买入」和「一次性买入」 -->
+        <div class="field">
+          <label class="check">
+            <input v-model="editingHolding.dca!.enabled" type="checkbox" />
+            <span>这是一笔定投</span>
+          </label>
+        </div>
+        <div v-if="editingHolding.dca?.enabled" class="grid2">
+          <div class="field">
+            <label>周期</label>
+            <select v-model="editingHolding.dca!.period">
+              <option v-for="p in DCA_PERIODS" :key="p.value" :value="p.value">
+                {{ p.label }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label>每期金额</label>
+            <input v-model.number="editingHolding.dca!.amount" type="number" />
+          </div>
+        </div>
+        <div v-if="editingHolding.dca?.enabled" class="card-meta">
+          折算每月约 ¥{{ Math.round(monthlyDcaAmount(editingHolding.dca)) }}
+        </div>
+
         <div class="field">
           <label class="check">
             <input v-model="editingHolding.confirmed" type="checkbox" />

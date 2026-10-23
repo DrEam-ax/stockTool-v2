@@ -11,6 +11,7 @@
 import type { MemoryFact, ModelProvider, UserProfile } from '@/types'
 import { chat, chatJson, LlmError } from './llm'
 import { nowIso, uid, num, clamp } from '@/lib/fmt'
+import { describeDca, monthlyDcaAmount, type DcaPlan } from '@/lib/dca'
 
 export interface ParsedHolding {
   name: string
@@ -138,7 +139,14 @@ function normalizePct(v?: number): number | undefined {
 // ============================================================
 
 export interface ProfileContext {
-  holdings: { name: string; code?: string; marketValue?: number; profitPct?: number }[]
+  holdings: {
+    name: string
+    code?: string
+    marketValue?: number
+    profitPct?: number
+    /** 定投计划：画像要能看出「靠定投摊薄」还是「一次性重仓」 */
+    dca?: DcaPlan
+  }[]
   /** 用户在大V知识库里看过/问过什么，作为兴趣佐证 */
   recentQuestions?: string[]
   existingNotes?: string
@@ -195,7 +203,13 @@ export async function inferProfile(
     const seg = [`- ${h.name}${h.code ? `(${h.code})` : ''}`]
     if (h.marketValue != null) seg.push(`市值 ${Math.round(h.marketValue)}`)
     if (h.profitPct != null) seg.push(`盈亏 ${(h.profitPct * 100).toFixed(2)}%`)
+    const dca = describeDca(h.dca)
+    if (dca) seg.push(`定投 ${dca}`)
     lines.push(seg.join('，'))
+  }
+  const dcaMonthly = confirmed.reduce((s, h) => s + monthlyDcaAmount(h.dca), 0)
+  if (dcaMonthly > 0) {
+    lines.push(`\n定投合计每月约 ¥${Math.round(dcaMonthly)}（持续买入，不是一次性建仓）`)
   }
   if (ctx.recentQuestions?.length) {
     lines.push('\n最近提问：')

@@ -252,6 +252,13 @@ export interface Holding {
   /** 截图识别出来的必须经用户确认才计入统计，否则错一位数就会污染所有分析 */
   confirmed: boolean
   note?: string
+  /**
+   * 定投计划。
+   *
+   * 必须让 AI 看到：定投和一次性买入是两种操作，
+   * 「越跌越买」对定投是纪律，对一次性买入可能是失控。
+   */
+  dca?: import('./lib/dca').DcaPlan
 }
 
 export type FactKind = 'preference' | 'constraint' | 'observation' | 'goal'
