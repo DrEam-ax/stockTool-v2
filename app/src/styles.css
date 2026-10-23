@@ -1031,3 +1031,11 @@ html.kbd-open .page-full {
 .spread .btn {
   flex-shrink: 0;
 }
+
+/* 三宫格统计卡后面紧跟卡片时补一个间距。
+   为什么不用 .grid3 { margin-bottom }：SettingsView 里的 .grid3 是**卡片内部**
+   的统计行，全局加底边距会在卡片里多出一块空白。用相邻选择器只作用于
+   「栅格 → 卡片」这种跨块的情况（MemoryView 的统计卡 → 板块分布）。 */
+.grid3 + .card {
+  margin-top: 10px;
+}

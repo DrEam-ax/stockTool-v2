@@ -273,6 +273,83 @@ describe('新建会话：三种模式', () => {
   })
 })
 
+describe('底栏「会话」：从别的模块点回来要回到上次那个会话', () => {
+  /**
+   * 用户反馈：在某个会话里 → 点「记忆」→ 点回「会话」，会被踢回列表，
+   * 得重新找那一场。底栏的「会话」原来写死跳 `/`。
+   */
+  beforeEach(resetAll)
+
+  it('create 会记下刚建的会话', async () => {
+    const s = useSessions()
+    const sess = await s.create({ title: '测试会话' } as never)
+    expect(s.lastSessionId.value).toBe(sess.id)
+  })
+
+  it('markOpened 能更新，也能清空', () => {
+    const s = useSessions()
+    s.markOpened('ss_x')
+    expect(s.lastSessionId.value).toBe('ss_x')
+    s.markOpened(null)
+    expect(s.lastSessionId.value).toBeNull()
+  })
+
+  it('不在会话模块时，会话 tab 指向上次的会话', async () => {
+    const s = useSessions()
+    const sess = await s.create({ title: '要回到的会话' } as never)
+    s.loaded.value = true
+
+    const router = await makeRouter()
+    await router.push('/memory')
+    await router.isReady()
+    const { default: App } = await import('@/App.vue')
+    const w = mount(App, { global: { plugins: [router] } })
+    await flushPromises()
+    await nextTick()
+
+    const link = w.findAll('.tabbar a')[0]
+    expect(link.attributes('href') ?? link.attributes('to')).toContain(`/s/${sess.id}`)
+  })
+
+  it('已经在会话模块时，会话 tab 指向列表（方便切换）', async () => {
+    const s = useSessions()
+    const sess = await s.create({ title: '当前会话' } as never)
+    s.loaded.value = true
+
+    const router = await makeRouter()
+    await router.push(`/s/${sess.id}`)
+    await router.isReady()
+    const { default: App } = await import('@/App.vue')
+    const w = mount(App, { global: { plugins: [router] } })
+    await flushPromises()
+    await nextTick()
+
+    const link = w.findAll('.tabbar a')[0]
+    const href = link.attributes('href') ?? link.attributes('to') ?? ''
+    // 语义：在会话模块内部时不该再指向某个具体会话，而是回列表方便切换
+    expect(href).not.toContain('/s/')
+  })
+
+  it('上次的会话已被删除时退回列表，不落到空页面', async () => {
+    const s = useSessions()
+    const sess = await s.create({ title: '将被删除' } as never)
+    s.loaded.value = true
+    await s.remove(sess.id)
+
+    const router = await makeRouter()
+    await router.push('/kb')
+    await router.isReady()
+    const { default: App } = await import('@/App.vue')
+    const w = mount(App, { global: { plugins: [router] } })
+    await flushPromises()
+    await nextTick()
+
+    const link = w.findAll('.tabbar a')[0]
+    const href = link.attributes('href') ?? link.attributes('to') ?? ''
+    expect(href).not.toContain('/s/')
+  })
+})
+
 describe('会话详情：能打字就必须能发送', () => {
   /**
    * 用户反馈：输入框里明明有字，但「发送」按钮是灰的、点不动。

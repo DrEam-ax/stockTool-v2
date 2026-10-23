@@ -292,6 +292,13 @@ describe('布局：元素不能互相挤占', () => {
   it('开关控件不被压扁', () => {
     expect(block('.switch')).toContain('flex-shrink: 0')
   })
+
+  it('三宫格统计卡与下方卡片之间要有间距', () => {
+    // 用户截图里「板块分布」紧贴着上面三张统计卡。
+    // .grid3 本身没有 margin-bottom，用相邻选择器补，避免影响
+    // SettingsView 里「卡片内部的 .grid3」。
+    expect(css).toMatch(/\.grid3\s*\+\s*\.card\s*\{[^}]*margin-top:\s*\d+px/)
+  })
 })
 
 describe('定投：识别结果卡片上能勾选周期和金额', () => {

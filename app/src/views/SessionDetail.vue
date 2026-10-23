@@ -63,7 +63,14 @@ function toggleDetail(id: string) {
 
 onMounted(async () => {
   await Promise.all([sessions.load(), loadProviders()])
+  // 记住当前会话，底栏「会话」在别的模块点回来时能落回这里
+  sessions.markOpened(sessionId.value)
   await scrollToBottom()
+})
+
+// 同一路由内切换会话（如从列表连点两场）时也要更新
+watch(sessionId, (id) => {
+  if (id) sessions.markOpened(id)
 })
 
 watch(

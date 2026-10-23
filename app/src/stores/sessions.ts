@@ -24,6 +24,8 @@ import { useTools } from './tools'
 const sessions = ref<Session[]>([])
 const loaded = ref(false)
 const streamingId = ref<string | null>(null)
+/** 上次打开的会话 id：从其它模块点回「会话」时用它落回原处 */
+const lastSessionId = ref<string | null>(null)
 let abortController: AbortController | null = null
 
 export function newSession(patch: Partial<Session> = {}): Session {
@@ -65,7 +67,17 @@ export function useSessions() {
     const s = newSession(patch)
     await db.put(db.STORES.sessions, s)
     sessions.value.unshift(s)
+    lastSessionId.value = s.id
     return s
+  }
+
+  /** 记下「上次在看的会话」。
+   *
+   * 为什么需要：底栏的「会话」原来固定跳列表页，
+   * 于是「进会话 → 去记忆页 → 点回会话」会把人踢回列表，得重新找。
+   * 记住 id 之后，从其它模块点回来能直接落回原来那个会话。 */
+  function markOpened(id: string | null) {
+    lastSessionId.value = id
   }
 
   async function save(s: Session) {
@@ -306,6 +318,8 @@ export function useSessions() {
     loaded,
     streamingId,
     isStreaming,
+    lastSessionId,
+    markOpened,
     load,
     create,
     save,
