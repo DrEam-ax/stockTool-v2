@@ -95,16 +95,22 @@ const COMPOSER_MAX_H = 130
 /**
  * 输入框随内容变高，并保证最后一行始终可见。
  *
- * 两个都做过才知道的坑：
- *   1. 只设 `height: auto` 不读 scrollHeight 就不会变高，框子永远是 1 行；
- *   2. 变高之后如果不把 scrollTop 顶到底，光标会停在旧位置被挤出可视区，
- *      用户得手动往下滑才能看见自己刚打的字（微信不会这样）。
+ * 三个都是实测才知道的坑（用 Edge headless 量出来的，不是猜的）：
+ *   1. 只设 `height: auto` 不读 scrollHeight 就不会变高，框子永远是 1 行。
+ *   2. **`box-sizing: border-box` 下 scrollHeight 不含边框**，
+ *      直接把 scrollHeight 赋给 height 会永远差 2px（1px 上下边框），
+ *      非封顶状态下一直有一条 2px 的滚动量，光标行被切掉一条。
+ *      所以要把 `offsetHeight - clientHeight`（正好是上下边框）补上。
+ *   3. 变高之后不把 scrollTop 顶到底的话，光标会停在旧位置被挤出可视区，
+ *      用户得手动往下滑才能看见自己刚打的字。
  */
 function resizeComposer() {
   const el = taEl.value
   if (!el) return
   el.style.height = 'auto'
-  const h = Math.min(el.scrollHeight, COMPOSER_MAX_H)
+  // border-box 下 height 不含边框，用差值补回来（比读 computedStyle 简单可靠）
+  const border = Math.max(0, el.offsetHeight - el.clientHeight)
+  const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
   el.style.height = `${h}px`
   // 让最新一行/光标留在可视区内
   el.scrollTop = el.scrollHeight

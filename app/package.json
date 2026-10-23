@@ -1,7 +1,7 @@
 {
   "name": "stocktool-app",
   "private": true,
-  "version": "1.5.10",
+  "version": "1.5.11",
   "type": "module",
   "description": "选股/选基金助手：载入知识库、配置自己的 LLM、带全局记忆的多会话分析",
   "scripts": {
@@ -12,15 +12,16 @@
     "test": "esbuild tests/smoke.ts --bundle --platform=node --format=esm --target=node20 --outfile=tests/smoke.mjs --alias:@=./src && node tests/smoke.mjs",
     "test:dom": "vitest run --config vitest.config.ts",
     "test:live": "node tests/live_search.mjs",
-    "test:all": "pnpm typecheck && pnpm test && pnpm test:dom",
+    "test:all": "pnpm typecheck && pnpm test && pnpm test:dom && pnpm test:layout",
     "test:everything": "pnpm test:all && pnpm test:live",
     "sync-version": "node scripts/sync-version.mjs",
     "apk": "node scripts/build-apk.mjs",
     "apk:patch": "node scripts/build-apk.mjs --bump patch",
     "apk:minor": "node scripts/build-apk.mjs --bump minor",
     "apk:raw": "node scripts/build-apk.mjs --no-bump",
-    "ship": "pnpm typecheck && pnpm test && pnpm test:dom && pnpm apk",
-    "ship:minor": "pnpm typecheck && pnpm test && pnpm test:dom && pnpm apk:minor"
+    "ship": "pnpm typecheck && pnpm test && pnpm test:dom && pnpm test:layout && pnpm apk",
+    "ship:minor": "pnpm typecheck && pnpm test && pnpm test:dom && pnpm test:layout && pnpm apk:minor",
+    "test:layout": "node tools/run_composer_layout_test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

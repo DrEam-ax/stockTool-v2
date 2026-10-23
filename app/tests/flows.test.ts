@@ -449,12 +449,22 @@ describe('会话详情：能打字就必须能发送', () => {
     expect(msgs.some((m) => m.role === 'user' && m.content.includes('持仓'))).toBe(true)
   })
 
-  /** jsdom 不实现布局，scrollHeight 恒为 0 —— 用打桩模拟真实高度 */
+  /**
+   * 下面这几条是**只验代码路径**的测试：
+   * jsdom 没有布局引擎，scrollHeight 恒为 0，只能打桩。
+   * 所以它们能证明「resizeComposer 按 scrollHeight 算出高度并写了 style」，
+   * **不能证明真实浏览器里框子会变高**。
+   *
+   * 真实布局由 `pnpm test:layout`（tools/run_composer_layout_test.mjs，
+   * 用 Edge/Chrome headless 实测）覆盖，那条才是交付依据。
+   * 这个区分是踩过坑才写清楚的：曾经只靠打桩测试就交付了自增高，
+   * 用户在真机上发现根本没变高。
+   */
   function stubScrollHeight(el: HTMLTextAreaElement, h: number) {
     Object.defineProperty(el, 'scrollHeight', { value: h, configurable: true })
   }
 
-  it('输入多行时输入框跟着变高', async () => {
+  it('按 scrollHeight 计算高度（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     stubScrollHeight(ta.element as HTMLTextAreaElement, 96)
@@ -462,7 +472,7 @@ describe('会话详情：能打字就必须能发送', () => {
     expect((ta.element as HTMLTextAreaElement).style.height).toBe('96px')
   })
 
-  it('变高有上限，不会无限长高把聊天区挤没', async () => {
+  it('高度封顶 130px（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     stubScrollHeight(ta.element as HTMLTextAreaElement, 600)
@@ -470,17 +480,16 @@ describe('会话详情：能打字就必须能发送', () => {
     expect((ta.element as HTMLTextAreaElement).style.height).toBe('130px')
   })
 
-  it('变高后把最后一行顶进可视区（不用手动下滑）', async () => {
+  it('把 scrollTop 顶到底（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
     stubScrollHeight(el, 96)
     await ta.trigger('input')
-    // scrollTop 被顶到最底，最新一行才看得见
     expect(el.scrollTop).toBe(96)
   })
 
-  it('发送后高度缩回一行', async () => {
+  it('发送后高度缩回（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
@@ -489,7 +498,7 @@ describe('会话详情：能打字就必须能发送', () => {
     await ta.trigger('input')
     expect(el.style.height).toBe('96px')
 
-    stubScrollHeight(el, 40) // 清空后的真实高度
+    stubScrollHeight(el, 40)
     const btn = w.findAll('button').find((b) => b.text().includes('发送'))
     await btn!.trigger('click')
     await flushPromises()

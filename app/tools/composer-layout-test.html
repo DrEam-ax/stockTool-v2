@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>输入框自增高 · 真实布局测试</title>
+<!--
+  这个文件是**真实浏览器里**验证输入框自增高的测试页。
+
+  为什么不用 jsdom 测：
+    jsdom 没有布局引擎，scrollHeight / clientHeight 恒为 0，
+    只能靠 Object.defineProperty 打桩 —— 那样只能证明「代码被调用过」，
+    完全证明不了真实浏览器里框子会不会变高。
+    这个坑踩过一次（自增高写了假测试，用户在真机上发现没生效）。
+
+  跑法：node tools/run_composer_layout_test.mjs
+  判据：
+    · 非封顶状态 可滚动量 == 0（否则最后一行被切）
+    · 封顶后 scrollTop == 可滚动量（光标行可见）
+    · 高度随内容单调增加，且不超过 130
+-->
+<style>
+  /* 与 app/src/styles.css 里相关规则逐条照抄 */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f1115; color: #e6e8ee; font-family: system-ui, sans-serif; }
+  .page-full { padding-bottom: 56px; height: 100dvh; display: flex;
+               flex-direction: column; max-width: 720px; margin: 0 auto; }
+  .chat { flex: 1; overflow-y: auto; min-height: 0; }
+  .composer { border-top: 1px solid #2a3040; padding: 8px 12px; background: #0f1115; }
+  .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+  input[type='text'], input[type='number'], textarea, select {
+    width: 100%; background: #1d212c; border: 1px solid #2a3040;
+    border-radius: 8px; padding: 9px 11px; font-size: 14px; outline: none;
+  }
+  textarea { resize: vertical; min-height: 76px; line-height: 1.5; }
+  .composer textarea {
+    min-height: 40px; max-height: 130px; resize: none;
+    overflow-y: auto; padding: 9px 11px;
+  }
+  .attach { flex-shrink: 0; padding: 8px; }
+  .send { flex-shrink: 0; height: 38px; padding: 0 16px; }
+</style>
+</head>
+<body>
+<div class="page-full">
+  <div class="chat" id="chat"></div>
+  <div class="composer">
+    <div class="composer-row">
+      <div class="attach">📎</div>
+      <textarea id="ta" rows="1" placeholder="问点什么…"></textarea>
+      <button class="send">发送</button>
+    </div>
+  </div>
+</div>
+<pre id="out"></pre>
+
+<script>
+const COMPOSER_MAX_H = 130
+const ta = document.getElementById('ta')
+const out = document.getElementById('out')
+const log = []
+
+/* ======== 与 SessionDetail.vue 里 resizeComposer 完全一致 ======== */
+function resizeComposer() {
+  ta.style.height = 'auto'
+  const border = Math.max(0, ta.offsetHeight - ta.clientHeight)
+  const h = Math.min(ta.scrollHeight + border, COMPOSER_MAX_H)
+  ta.style.height = `${h}px`
+  ta.scrollTop = ta.scrollHeight
+}
+/* ============================================================== */
+
+function caretVisible() {
+  const cs = getComputedStyle(ta)
+  const lh = parseFloat(cs.lineHeight) || 21
+  const lines = ta.value.slice(0, ta.selectionStart || 0).split('\n').length - 1
+  const top = lines * lh
+  const bottom = top + lh
+  return bottom <= ta.scrollTop + ta.clientHeight + 0.5 && top >= ta.scrollTop - 0.5
+}
+
+function measure(tag) {
+  const r = ta.getBoundingClientRect()
+  log.push({
+    tag,
+    inlineHeight: ta.style.height,
+    rectHeight: Math.round(r.height * 100) / 100,
+    scrollHeight: ta.scrollHeight,
+    clientHeight: ta.clientHeight,
+    scrollTop: Math.round(ta.scrollTop),
+    scrollable: ta.scrollHeight - ta.clientHeight,
+    caretVisible: caretVisible(),
+  })
+}
+
+const cases = [
+  '短',
+  '结合最近的行情，我这个持仓怎么样',
+  '结合最近的行情，我这个持仓怎么样，帮我看看半导体这块',
+  '第一行\n第二行\n第三行\n第四行\n第五行\n第六行\n第七行\n第八行\n第九行\n第十行',
+]
+
+measure('初始')
+for (const text of cases) {
+  ta.value = text
+  ta.selectionStart = ta.selectionEnd = text.length
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  resizeComposer()
+  measure(text.split('\n').length + '行/' + text.length + '字')
+}
+
+out.textContent = 'RESULT_JSON:' + JSON.stringify(log)
+</script>
+</body>
+</html>
