@@ -129,6 +129,11 @@ async function scrollToBottom() {
  * 而且 `v-model` 在组合态是故意不更新状态的，所以靠 watch 也兜不住。
  */
 function onComposerInput() {
+  // 组合态下 v-model 可能没同步，这里先把 DOM 的真实内容拉回状态。
+  // 否则后面任何一次重渲染（点个开关、换个知识库）都可能用空状态覆盖掉 DOM，
+  // 用户刚打的字就没了 —— 真机上「点联网开关文字消失」正是这个机制。
+  const el = taEl.value
+  if (el && el.value !== input.value) input.value = el.value
   resizeComposer()
   // 组合态下的补算：等浏览器重排完成。两层兜底 ——
   //   rAF：正常情况下重排后的第一帧
@@ -199,6 +204,22 @@ function stopComposerWatch() {
     composerTimer = null
     lastComposerH = -1
   }
+}
+
+/**
+ * 失焦时把 DOM 里的真实内容同步回状态 —— 这条很重要。
+ *
+ * 真机必现的 bug：中文输入法组合态下 `v-model` 不会更新状态，
+ * 此时点顶部的「已允许联网」等开关，输入框会先失焦、再触发重渲染；
+ * Vue 的 `v-model` 指令发现「DOM 值 ≠ 状态值」，就用状态里的空串覆盖了 DOM，
+ * **用户刚打的字凭空消失**。
+ *
+ * 在 blur 这一刻先把 DOM 拉回状态，重渲染时两者相等，就不会再被覆盖。
+ */
+function onComposerBlur() {
+  const el = taEl.value
+  if (el && el.value !== input.value) input.value = el.value
+  stopComposerWatch()
 }
 
 // 离开会话页时把定时器收掉，别在后台空转
@@ -506,7 +527,7 @@ const memoryHint = computed(() => {
             @input="onComposerInput"
             @compositionend="onComposerInput"
             @focus="startComposerWatch"
-            @blur="stopComposerWatch"
+            @blur="onComposerBlur"
           />
           <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止

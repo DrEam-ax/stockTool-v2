@@ -576,4 +576,63 @@ describe('会话详情：能打字就必须能发送', () => {
     await new Promise((r) => setTimeout(r, 220))
     expect(el.style.height).not.toBe('96px')
   })
+
+  /**
+   * 用户反馈：输入框里打了字，点顶部的「已允许联网」开关，文字就没了。
+   * 这类"点开关丢输入"通常来自组件重渲染或把 ref 重置了，必须钉住。
+   */
+  it('点「允许联网」开关不会清空已输入的文字', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    await ta.setValue('结合最近的行情，我这个持仓怎么样')
+    expect((ta.element as HTMLTextAreaElement).value).toBe('结合最近的行情，我这个持仓怎么样')
+
+    const chip = w.findAll('.chip.pick').find((c) => c.text().includes('联网'))
+    expect(chip).toBeTruthy()
+    await chip!.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // 开关生效
+    expect(useSessions().sessions.value[0].allowOnline).toBe(true)
+    // 文字还在
+    const after = w.find('textarea').element as HTMLTextAreaElement
+    expect(after.value).toBe('结合最近的行情，我这个持仓怎么样')
+  })
+
+  it('点「共享记忆」开关同样不清空文字', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    await ta.setValue('测试文字')
+    const chip = w.findAll('.chip.pick').find((c) => c.text().includes('记忆'))
+    await chip!.trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('测试文字')
+  })
+
+  /**
+   * 真机上真正的成因：中文输入法组合态里 v-model 不会更新状态，
+   * 此时点任何开关都会让输入框失焦 + 触发重渲染，
+   * Vue 的 v-model 指令发现「DOM 值 ≠ 状态值」就把 DOM 覆盖成空 —— 文字就没了。
+   *
+   * 这里精确模拟：只改 DOM 的 value、不派发 input 事件（等价于组合态失同步），
+   * 然后失焦 + 点开关，文字必须还在。
+   */
+  it('v-model 失同步时，失焦后点开关不能把文字冲掉', async () => {
+    const w = await mountSession()
+    const el = w.find('textarea').element as HTMLTextAreaElement
+    el.value = '打了一半的句子' // 组合态：DOM 有字，Vue 状态还是空
+    await nextTick()
+
+    // 真机上点 chip 会先让输入框失焦
+    await w.find('textarea').trigger('blur')
+
+    const chip = w.findAll('.chip.pick').find((c) => c.text().includes('联网'))
+    await chip!.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('打了一半的句子')
+  })
 })
