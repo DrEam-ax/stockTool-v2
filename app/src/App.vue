@@ -6,6 +6,7 @@ import { useKnowledge } from '@/stores/knowledge'
 import { useMemory } from '@/stores/memory'
 import { useSessions } from '@/stores/sessions'
 import { installKeyboardWatcher } from '@/lib/keyboard'
+import TabIcon from '@/components/TabIcon.vue'
 
 const route = useRoute()
 const { load: loadProviders, providers } = useProviders()
@@ -66,20 +67,20 @@ onUnmounted(() => uninstallKbd?.())
 
   <nav class="tabbar">
     <router-link :to="sessionsTo" :class="{ active: activeTab === 'sessions' }">
-      <span class="ico">💬</span>
+      <TabIcon name="sessions" />
       <span>会话</span>
     </router-link>
     <router-link to="/memory" :class="{ active: activeTab === 'memory' }">
-      <span class="ico">🧠</span>
+      <TabIcon name="memory" />
       <span>记忆</span>
       <i v-if="badge.memory" class="dot" />
     </router-link>
     <router-link to="/kb" :class="{ active: activeTab === 'kb' }">
-      <span class="ico">📚</span>
+      <TabIcon name="kb" />
       <span>知识库</span>
     </router-link>
     <router-link to="/settings" :class="{ active: activeTab === 'settings' }">
-      <span class="ico">⚙️</span>
+      <TabIcon name="settings" />
       <span>设置</span>
       <i v-if="setupHint" class="dot" />
     </router-link>
