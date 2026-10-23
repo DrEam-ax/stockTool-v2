@@ -46,6 +46,7 @@ app/node_modules/
 app/dist/
 app/tests/smoke.mjs
 app/.vite/
+app/.vitest/
 app/*.tsbuildinfo
 
 # ============ Android 构建产物 ============
