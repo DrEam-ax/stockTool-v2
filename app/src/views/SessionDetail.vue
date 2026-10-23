@@ -78,6 +78,18 @@ watch(
   () => session.value?.messages.length,
   () => scrollToBottom(),
 )
+
+/**
+ * 双保险：不依赖 `@input` 事件一定触发。
+ *
+ * 某些输入法/机型下输入事件可能被吞（发送按钮那次就是栽在这上面），
+ * 所以只要 `input` 状态变了（无论来自键盘、粘贴还是程序清空）
+ * 都等 DOM 更新后重算一次高度。
+ */
+watch(input, async () => {
+  await nextTick()
+  resizeComposer()
+})
 watch(
   () => session.value?.messages[session.value.messages.length - 1]?.content,
   () => scrollToBottom(),
