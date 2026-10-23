@@ -751,7 +751,11 @@ textarea {
 
 .composer textarea {
   min-height: 40px;
+  /* 高度由 JS 按内容算（约 5 行封顶），这里只兜底上限 */
   max-height: 130px;
+  /* 手机上没有拖拽柄；桌面上也不该出现，会破坏自增高 */
+  resize: none;
+  overflow-y: auto;
   padding: 9px 11px;
 }
 

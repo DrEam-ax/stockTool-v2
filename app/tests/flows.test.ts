@@ -448,4 +448,52 @@ describe('会话详情：能打字就必须能发送', () => {
     const msgs = useSessions().sessions.value[0].messages
     expect(msgs.some((m) => m.role === 'user' && m.content.includes('持仓'))).toBe(true)
   })
+
+  /** jsdom 不实现布局，scrollHeight 恒为 0 —— 用打桩模拟真实高度 */
+  function stubScrollHeight(el: HTMLTextAreaElement, h: number) {
+    Object.defineProperty(el, 'scrollHeight', { value: h, configurable: true })
+  }
+
+  it('输入多行时输入框跟着变高', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    stubScrollHeight(ta.element as HTMLTextAreaElement, 96)
+    await ta.trigger('input')
+    expect((ta.element as HTMLTextAreaElement).style.height).toBe('96px')
+  })
+
+  it('变高有上限，不会无限长高把聊天区挤没', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    stubScrollHeight(ta.element as HTMLTextAreaElement, 600)
+    await ta.trigger('input')
+    expect((ta.element as HTMLTextAreaElement).style.height).toBe('130px')
+  })
+
+  it('变高后把最后一行顶进可视区（不用手动下滑）', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 96)
+    await ta.trigger('input')
+    // scrollTop 被顶到最底，最新一行才看得见
+    expect(el.scrollTop).toBe(96)
+  })
+
+  it('发送后高度缩回一行', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 96)
+    await ta.setValue('发一条测试')
+    await ta.trigger('input')
+    expect(el.style.height).toBe('96px')
+
+    stubScrollHeight(el, 40) // 清空后的真实高度
+    const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+    await btn!.trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(el.style.height).toBe('40px')
+  })
 })

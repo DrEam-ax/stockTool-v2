@@ -65,6 +65,7 @@ onMounted(async () => {
   await Promise.all([sessions.load(), loadProviders()])
   // 记住当前会话，底栏「会话」在别的模块点回来时能落回这里
   sessions.markOpened(sessionId.value)
+  resizeComposer()
   await scrollToBottom()
 })
 
@@ -86,6 +87,29 @@ async function scrollToBottom() {
   await nextTick()
   const el = chatEl.value
   if (el) el.scrollTop = el.scrollHeight
+}
+
+/** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
+const COMPOSER_MAX_H = 130
+
+/**
+ * 输入框随内容变高，并保证最后一行始终可见。
+ *
+ * 两个都做过才知道的坑：
+ *   1. 只设 `height: auto` 不读 scrollHeight 就不会变高，框子永远是 1 行；
+ *   2. 变高之后如果不把 scrollTop 顶到底，光标会停在旧位置被挤出可视区，
+ *      用户得手动往下滑才能看见自己刚打的字（微信不会这样）。
+ */
+function resizeComposer() {
+  const el = taEl.value
+  if (!el) return
+  el.style.height = 'auto'
+  const h = Math.min(el.scrollHeight, COMPOSER_MAX_H)
+  el.style.height = `${h}px`
+  // 让最新一行/光标留在可视区内
+  el.scrollTop = el.scrollHeight
+  // 输入区变高会挤压上面的聊天区，保持消息仍贴在底部
+  void scrollToBottom()
 }
 
 async function onAttach(e: Event) {
@@ -122,6 +146,8 @@ async function onSend() {
   attached.value = []
   // 状态被清空后同步清掉 DOM，否则输入法里的残留文字会留在屏幕上
   if (taEl.value) taEl.value.value = ''
+  // 高度要跟着缩回 1 行，否则发完还留着上次撑开的空档
+  resizeComposer()
   await sessions.send(s.id, text, images)
 }
 
@@ -363,6 +389,7 @@ const memoryHint = computed(() => {
             rows="1"
             placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"
             @keydown="onKeydown"
+            @input="resizeComposer"
           />
           <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止

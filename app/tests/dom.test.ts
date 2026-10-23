@@ -299,6 +299,14 @@ describe('布局：元素不能互相挤占', () => {
     // SettingsView 里「卡片内部的 .grid3」。
     expect(css).toMatch(/\.grid3\s*\+\s*\.card\s*\{[^}]*margin-top:\s*\d+px/)
   })
+
+  it('输入框不能被手动拖拽改变高度（会和自增高打架）', () => {
+    const b = block('.composer textarea')
+    expect(b).toContain('resize: none')
+    // 上限交给 CSS 兜底，JS 里也有一份
+    expect(b).toMatch(/max-height:\s*\d+px/)
+    expect(b).toContain('overflow-y: auto')
+  })
 })
 
 describe('定投：识别结果卡片上能勾选周期和金额', () => {
