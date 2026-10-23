@@ -29,6 +29,8 @@ FORBIDDEN_PATHS = [
     "config/llm_api_key.txt",
     "config/xueqiu_cookie.txt",
     "config/settings.json",
+    # 协作日志：内部工作记录，用户明确要求不进公开库
+    "COLLAB_LOG.md",
     "data/stocktool.db",
     "data/raw/",
     "dist/",
