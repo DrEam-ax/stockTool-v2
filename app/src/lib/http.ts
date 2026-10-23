@@ -118,6 +118,20 @@ export async function request(url: string, opts: HttpOptions = {}): Promise<Http
         errorKind: 'cors',
       }
     }
+    // Android 9+ 默认禁止明文 HTTP：原生请求会被系统在几毫秒内直接拒绝，
+    // 报 "Cleartext HTTP traffic ... not permitted"。这不是 CORS，也说不出人话，
+    // 所以单独识别，直接告诉调用方/用户该换成 https。
+    if (/cleartext/i.test(msg) || /not permitted/i.test(msg)) {
+      return {
+        ok: false,
+        status: 0,
+        text: '',
+        error:
+          '明文 HTTP 被系统拦截：Android 9+ 默认不允许 http:// 请求。' +
+          '请改用 https:// 链接（本地大模型 127.0.0.1 除外）。',
+        errorKind: 'network',
+      }
+    }
     return { ok: false, status: 0, text: '', error: msg, errorKind: 'network' }
   } finally {
     clearTimeout(timer)

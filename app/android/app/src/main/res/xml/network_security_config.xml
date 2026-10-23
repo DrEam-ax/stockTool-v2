@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置。
+
+  为什么需要这个文件：
+    Android 9+（targetSdk >= 28）**默认禁止明文 HTTP**。
+    应用的 targetSdk 是 36，所以任何 http:// 请求都会被系统在几毫秒内
+    直接拒绝，报 "Cleartext HTTP traffic ... not permitted"。
+
+  放行范围只限本机：
+    · 127.0.0.1 / localhost —— Ollama、LM Studio 这类本地大模型服务
+      只有 http，没有 https，不放行就用不了
+    · 10.0.2.2 —— Android 模拟器里访问宿主机的固定地址
+
+  其余域名一律仍然禁止明文。搜索结果里的 http:// 链接由
+  services/tools/web.ts 的 upgradeToHttps() 自动升级成 https 后再读，
+  所以不需要为此放开全局 cleartext。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

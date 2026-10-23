@@ -20,6 +20,7 @@ import { buildSystemPrompt, kbPerformance, retrieveOpinions } from '../src/servi
 import { hitStats, wilsonInterval, signTestP, verdict } from '../src/lib/stats'
 import { kbSearchTool, kbPerformanceTool } from '../src/services/tools/kb'
 import { ALL_TOOLS, activeTools, describeAvailability } from '../src/services/tools'
+import { upgradeToHttps } from '../src/services/tools/web'
 import { defaultToolConfig, type KnowledgeBase, type ToolConfig } from '../src/types'
 import { availablePersonas, personaToPrompt } from '../src/services/persona'
 import { buildAuditPrompt } from '../src/services/audit'
@@ -498,6 +499,29 @@ async function main() {
   check('校验失败都有可见提示（没有裸 return）',
     !/if \(!p\.baseUrl\.trim\(\)\) return\b/.test(settingsSrc2),
     '又出现了静默 return —— 用户点保存会以为没反应')
+
+  // ---------- 明文 HTTP（Android 9+ 默认禁止） ----------
+  section('[M] 明文 HTTP：自动升级到 https')
+  check(
+    '普通 http 链接升级为 https',
+    upgradeToHttps('http://finance.eastmoney.com/a/1.html') ===
+      'https://finance.eastmoney.com/a/1.html',
+    upgradeToHttps('http://finance.eastmoney.com/a/1.html'),
+  )
+  check('https 保持不动', upgradeToHttps('https://a.com/x') === 'https://a.com/x')
+  check(
+    '本地大模型地址保持明文（Ollama 没有 https）',
+    upgradeToHttps('http://127.0.0.1:11434/v1') === 'http://127.0.0.1:11434/v1',
+  )
+  check(
+    'localhost 保持明文',
+    upgradeToHttps('http://localhost:8000/v1') === 'http://localhost:8000/v1',
+  )
+  check(
+    '模拟器宿主机地址保持明文',
+    upgradeToHttps('http://10.0.2.2:8080/x') === 'http://10.0.2.2:8080/x',
+  )
+  check('不是 http 开头的一律原样返回', upgradeToHttps('ftp://x/y') === 'ftp://x/y')
 
   // ---------- 定投 ----------
   section('[N] 定投（军师判断操作时必须区分「持续买入」和「一次性买入」）')

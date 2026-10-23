@@ -373,6 +373,25 @@ export const webSearchTool: ToolDef = {
   },
 }
 
+/**
+ * 把 http:// 升级成 https://。
+ *
+ * 为什么需要：Android 9+（targetSdk >= 28）**默认禁止明文 HTTP**，
+ * 原生请求会在几毫秒内被系统直接拒绝，报
+ * "Cleartext HTTP traffic to xxx not permitted"。
+ * 而搜索结果经常返回 http:// 链接（尤其国内财经站），模型照抄就会失败 ——
+ * 用户看到的就是「读取网页失败：跨域(CORS)…」+ 8ms。
+ * 绝大多数站点同时支持 https，升级一下就能读。
+ *
+ * 本地地址（Ollama / LM Studio）保持明文 —— 它们本来就没有 https，
+ * 已经在 network_security_config.xml 里单独放行。
+ */
+export function upgradeToHttps(url: string): string {
+  if (!/^http:\/\//i.test(url)) return url
+  if (/^http:\/\/(127\.0\.0\.1|localhost|10\.0\.2\.2|\[::1\])(:|\/|$)/i.test(url)) return url
+  return url.replace(/^http:\/\//i, 'https://')
+}
+
 export const fetchPageTool: ToolDef = {
   name: 'fetch_page',
   title: '读取网页',
@@ -393,10 +412,13 @@ export const fetchPageTool: ToolDef = {
       ? { ok: true }
       : { ok: false, reason: '联网功能未启用（设置 → 工具）' },
   async run(args, ctx): Promise<ToolResult> {
-    const url = asString(args.url)
-    if (!/^https?:\/\//i.test(url)) {
+    const raw = asString(args.url)
+    if (!/^https?:\/\//i.test(raw)) {
       return { ok: false, display: '读取网页：网址无效', content: '网址必须以 http(s):// 开头', error: '网址无效' }
     }
+    // 明文的先升级到 https 再读（见 upgradeToHttps 的说明）
+    const url = upgradeToHttps(raw)
+    const upgraded = url !== raw
     try {
       const res = await request(url, { signal: ctx.signal, timeoutMs: 20000 })
       if (!res.ok) throw new Error(res.error || `HTTP ${res.status}`)
@@ -405,12 +427,13 @@ export const fetchPageTool: ToolDef = {
       if (!text.trim()) {
         return { ok: true, display: '读取网页：正文为空', content: '该页面没有可提取的正文。' }
       }
+      const note = upgraded ? `\n（原链接是 http，已自动改用 ${url}）` : ''
       return {
         ok: true,
         display: `读取网页：${new URL(url).hostname}`,
         summary: `${text.length} 字`,
         detail: text.slice(0, 1500),
-        content: `页面内容（${url}）：\n\n${text}`,
+        content: `页面内容（${url}）：${note}\n\n${text}`,
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
