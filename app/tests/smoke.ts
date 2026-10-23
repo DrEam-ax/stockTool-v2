@@ -441,6 +441,11 @@ async function main() {
 
   console.log(`    package.json=${pkg.version}  version.ts=${(/'([\d.]+)'/.exec(verTs) ?? [])[1]}  properties=${propsName}`)
   check('package.json 有合法版本号', /^\d+\.\d+\.\d+$/.test(pkg.version), pkg.version)
+  // 每段只能是 0-9 一位数字：patch 到 10 必须进位成 minor+1（1.5.9 → 1.6.0）。
+  // 出现过 1.5.10 / 1.5.11 / 1.5.12 这种两位数段，用户明确要求改掉。
+  check('版本号每段都是一位数字（0-9）',
+    pkg.version.split('.').every((s) => /^\d$/.test(s)),
+    `${pkg.version} —— 两位数段应该进位，例如 1.5.12 → 1.6.2`)
   check('src/version.ts 与 package.json 一致',
     verTs.includes(`'${pkg.version}'`), verTs.slice(0, 80))
   check('android/version.properties 已生成', propsTxt.length > 0, propsPath)

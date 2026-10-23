@@ -110,10 +110,39 @@ if (explicitVersion) {
     throw new Error(`--bump 只支持 patch / minor / major，收到：${bumpKind}`)
   }
   let [ma, mi, pa] = before.split('.').map((n) => parseInt(n, 10) || 0)
-  if (bumpKind === 'major') { ma++; mi = 0; pa = 0 }
-  else if (bumpKind === 'minor') { mi++; pa = 0 }
-  else { pa++ }
+  if (bumpKind === 'major') {
+    ma++
+    mi = 0
+    pa = 0
+  } else if (bumpKind === 'minor') {
+    mi++
+    pa = 0
+  } else {
+    pa++
+  }
+  // 版本号每段只允许一位数（0-9）：patch 到 10 就进 minor，minor 到 10 就进 major。
+  // 这样 1.5.9 的下一个补丁版本是 1.6.0，而不是 1.5.10 —— 后者会出现两位数段。
+  if (pa > 9) {
+    pa = 0
+    mi++
+  }
+  if (mi > 9) {
+    mi = 0
+    ma++
+  }
   pkg.version = `${ma}.${mi}.${pa}`
+}
+
+// 兜底校验：任何一段出现两位数都直接失败，别把 1.5.12 这种写进去
+{
+  const segs = String(pkg.version).split('.')
+  const bad = segs.find((s) => !/^\d$/.test(s))
+  if (bad !== undefined) {
+    throw new Error(
+      `版本号每段只能是一位数字（0-9），"${pkg.version}" 不合法。` +
+        `\n  提示：patch 到 10 应该进位成 minor+1、patch=0（例如 1.5.9 → 1.6.0）。`,
+    )
+  }
 }
 
 if (pkg.version !== before) {

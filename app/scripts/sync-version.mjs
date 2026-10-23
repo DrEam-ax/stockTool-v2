@@ -25,6 +25,19 @@ const WEB_VERSION = resolve(APP, 'src', 'version.ts')
 const pkg = JSON.parse(readFileSync(PKG, 'utf8'))
 const version = String(pkg.version || '0.0.0')
 
+// 每段只允许一位数字（0-9）。出现 1.5.12 这种两位数段就直接失败：
+// versionCode 编码是 major*10000 + minor*100 + patch，
+// 两位数 patch 会让版本号语义和升级链路都乱掉（1.5.12 本该是 1.6.2）。
+{
+  const segs = version.split('.')
+  if (segs.length !== 3 || segs.some((s) => !/^\d$/.test(s))) {
+    throw new Error(
+      `package.json 的 version="${version}" 不合法：必须是三段、每段一位数字（0-9）。\n` +
+        `  规则：patch 到 10 就进位到 minor（1.5.9 → 1.6.0），minor 到 10 就进位到 major。`,
+    )
+  }
+}
+
 const [major = 0, minor = 0, patch = 0] = version
   .split('.')
   .map((n) => parseInt(n, 10) || 0)
