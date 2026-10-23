@@ -8,7 +8,7 @@
  *   当成「高位补仓」来批评。
  */
 
-export type DcaPeriod = 'weekly' | 'biweekly' | 'monthly'
+export type DcaPeriod = 'daily' | 'weekly' | 'biweekly' | 'monthly'
 
 export interface DcaPlan {
   /** 关闭时保留原有参数，方便再次打开 */
@@ -16,14 +16,16 @@ export interface DcaPlan {
   /** 每期投入金额（元） */
   amount?: number
   period: DcaPeriod
-  /** weekly 时为 1-5（周一~周五）；monthly 时为 1-28（每月几号） */
+  /** weekly 时为 1-7（周一~周日）；monthly 时为 1-28（每月几号）；daily 忽略 */
   dayOfPeriod?: number
   /** 首次扣款日期 YYYY-MM-DD，可为空 */
   startAt?: string
   note?: string
 }
 
+/** 频率由高到低，UI 下拉按这个顺序显示 */
 export const DCA_PERIODS: { value: DcaPeriod; label: string; every: string }[] = [
+  { value: 'daily', label: '每日', every: '日' },
   { value: 'weekly', label: '每周', every: '周' },
   { value: 'biweekly', label: '每两周', every: '两周' },
   { value: 'monthly', label: '每月', every: '月' },
@@ -40,8 +42,9 @@ export function describeDca(plan: DcaPlan | undefined | null): string {
   if (!plan?.enabled) return ''
   const amount = plan.amount != null && plan.amount > 0 ? `¥${Math.round(plan.amount)}` : '金额未填'
   const period = periodLabel(plan.period)
+  // 每日定投不谈「几号/周几」，直接说每日
   let when = ''
-  if (plan.dayOfPeriod != null) {
+  if (plan.dayOfPeriod != null && plan.period !== 'daily') {
     if (plan.period === 'monthly') when = `每月 ${plan.dayOfPeriod} 号`
     else when = WEEKDAYS[Math.max(0, Math.min(6, plan.dayOfPeriod - 1))] ?? ''
   }
@@ -54,6 +57,7 @@ export function describeDca(plan: DcaPlan | undefined | null): string {
 /** 折算成「平均每月投入」，用于估算仓位节奏 */
 export function monthlyDcaAmount(plan: DcaPlan | undefined | null): number {
   if (!plan?.enabled || !plan.amount || plan.amount <= 0) return 0
+  if (plan.period === 'daily') return plan.amount * 365 / 12
   if (plan.period === 'weekly') return plan.amount * 52 / 12
   if (plan.period === 'biweekly') return plan.amount * 26 / 12
   return plan.amount

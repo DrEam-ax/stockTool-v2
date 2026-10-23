@@ -314,9 +314,9 @@ describe('定投：识别结果卡片上能勾选周期和金额', () => {
     await dcaBox.setValue(true)
     await w.vm.$nextTick()
     expect(w.findAll('select').length).toBe(1)
-    // 周期下拉里要有周/双周/月三个选项
+    // 周期下拉里要有日/周/双周/月四个选项（频率由高到低）
     const opts = w.findAll('select option').map((o) => o.text())
-    expect(opts).toEqual(['每周', '每两周', '每月'])
+    expect(opts).toEqual(['每日', '每周', '每两周', '每月'])
     expect(holding.dca?.enabled).toBe(true)
   })
 

@@ -25,7 +25,7 @@ import { availablePersonas, personaToPrompt } from '../src/services/persona'
 import { buildAuditPrompt } from '../src/services/audit'
 import { listModels } from '../src/services/llm'
 import { toPlain } from '../src/lib/db'
-import { describeDca, monthlyDcaAmount, isDcaActive } from '../src/lib/dca'
+import { describeDca, monthlyDcaAmount, isDcaActive, DCA_PERIODS } from '../src/lib/dca'
 import { reactive } from 'vue'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -513,6 +513,18 @@ async function main() {
     describeDca({ enabled: true, period: 'monthly' }).includes('未填'))
   check('isDcaActive 只认 enabled',
     isDcaActive({ enabled: true, period: 'monthly' }) && !isDcaActive({ enabled: false, period: 'monthly' }))
+
+  // 每日定投
+  check('每日定投描述成「每日」',
+    describeDca({ enabled: true, period: 'daily', amount: 100 }) === '每日 ¥100',
+    describeDca({ enabled: true, period: 'daily', amount: 100 }))
+  check('每日定投忽略「几号」，不会画出「每月 3 号」',
+    !describeDca({ enabled: true, period: 'daily', amount: 100, dayOfPeriod: 3 }).includes('号'))
+  const daily = monthlyDcaAmount({ enabled: true, period: 'daily', amount: 100 })
+  check('每日折算成月均（100/日 ≈ 3042/月）',
+    Math.abs(daily - 3041.7) < 1, String(daily))
+  check('每日排在周期选项的第一位（频率由高到低）',
+    DCA_PERIODS[0].value === 'daily' && DCA_PERIODS[0].label === '每日')
 
   const dcaMonthly = monthlyDcaAmount({ enabled: true, period: 'weekly', amount: 100 })
   check('每周期折算成月均（100/周 ≈ 433/月）',
