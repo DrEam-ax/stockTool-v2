@@ -410,6 +410,14 @@ export interface Session {
   personaAuthorUid?: string | null
   /** audit 模式的背景补充（持仓、成本等） */
   auditContext?: string
+  /**
+   * 是否已预先授权「联网查证」。
+   *
+   * false/未设置时：模型在查行情、新闻、政策前**先用一句话问用户能不能查**，
+   * 得到同意后才调用工具 —— 避免一上来就自己去联网。
+   * true：本会话不再逐次询问，可以直接查。
+   */
+  allowOnline?: boolean
   /** 可选：本会话聚焦的标的 */
   focusSubject?: { secid?: string; name: string } | null
   messages: ChatMessage[]

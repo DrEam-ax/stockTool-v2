@@ -173,7 +173,13 @@ export function useSessions() {
     // 工具是否真的可用，决定提示词里"先查证"的口径：
     // 有工具却说"这需要查证"会浪费能力，没工具却说"先调用工具"会让模型硬编。
     const mode = s.mode ?? 'research'
-    const hasTools = activeTools({ kbs, config: tools.config.value }).length > 0
+    const toolCtx = {
+      kbs,
+      config: tools.config.value,
+      holdings: memCtx?.holdings ?? [],
+      allowOnline: Boolean(s.allowOnline),
+    }
+    const hasTools = activeTools(toolCtx).length > 0
 
     const systemPrompt = buildSystemPrompt({
       kbs,
@@ -184,6 +190,7 @@ export function useSessions() {
       personaAuthorUid: s.personaAuthorUid ?? null,
       auditContext: s.auditContext,
       hasTools,
+      allowOnline: Boolean(s.allowOnline),
     })
 
     // 历史必须在 push 当前提问之前取
@@ -235,8 +242,7 @@ export function useSessions() {
         question: text,
         questionImages: images,
         ctx: {
-          kbs,
-          config: tools.config.value,
+          ...toolCtx,
           signal: abortController.signal,
         },
         maxRounds: tools.config.value.maxRounds,

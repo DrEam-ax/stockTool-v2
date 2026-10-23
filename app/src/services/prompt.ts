@@ -56,6 +56,11 @@ export interface BuildPromptArgs {
   auditContext?: string
   /** 有没有可用的联网工具 —— 决定"先查证"的口径 */
   hasTools?: boolean
+  /**
+   * 用户是否已预先授权联网查证（会话里「允许联网」开关）。
+   * false 时提示词要求模型先问一句再调工具。
+   */
+  allowOnline?: boolean
 }
 
 /** 某个知识库在某周期上的整体表现 */
@@ -289,7 +294,10 @@ function buildAdvisorPrompt(
   const hasTools = args.hasTools !== false
 
   // 1) 角色本体 —— 必须放最前面，先"成为"他
-  let system = personaToPrompt(author.persona, name, { hasTools })
+  let system = personaToPrompt(author.persona, name, {
+    hasTools,
+    allowOnline: args.allowOnline,
+  })
 
   // 2) 他确实说过的话，作为可选佐证（不是回答主体）
   const retrieved = retrieveOpinions(kb, {

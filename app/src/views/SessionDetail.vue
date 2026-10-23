@@ -257,6 +257,20 @@ async function onToggleMemory() {
   await sessions.save(s)
 }
 
+/**
+ * 允许联网查证。
+ *
+ * 关着的时候：模型需要在查行情/新闻前先问一句，得到同意才动手。
+ * 打开之后：本会话不再逐次询问，直接查。
+ * 目的是把「要不要让它自己去联网」的决定权留在用户手里。
+ */
+async function onToggleOnline() {
+  const s = session.value
+  if (!s) return
+  s.allowOnline = !s.allowOnline
+  await sessions.save(s)
+}
+
 function openKbPicker() {
   const s = session.value
   if (!s) return
@@ -336,6 +350,14 @@ const memoryHint = computed(() => {
             @click="onToggleMemory"
           >
             🧠 {{ session.useGlobalMemory ? '共享记忆' : '隔离记忆' }}
+          </span>
+          <!-- 联网授权：关着=先问再查；打开=本会话直接查 -->
+          <span
+            class="chip pick"
+            :class="{ on: session.allowOnline }"
+            @click="onToggleOnline"
+          >
+            🌐 {{ session.allowOnline ? '已允许联网' : '联网前先问我' }}
           </span>
           <span class="chip pick" @click="openKbPicker">
             📚

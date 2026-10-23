@@ -1,9 +1,16 @@
-import type { KnowledgeBase, ToolConfig } from '@/types'
+import type { Holding, KnowledgeBase, ToolConfig } from '@/types'
 
 export interface ToolContext {
   kbs: KnowledgeBase[]
   config: ToolConfig
   signal?: AbortSignal
+  /** 用户已确认 + 待确认的持仓。check_holdings 用它核对「是不是已经持有」 */
+  holdings?: Holding[]
+  /**
+   * 用户是否已预先授权联网查证。
+   * false 时提示词要求模型先问一句再调工具（会话里的「允许联网」开关）。
+   */
+  allowOnline?: boolean
 }
 
 export interface ToolResult {

@@ -21,6 +21,7 @@ import { hitStats, wilsonInterval, signTestP, verdict } from '../src/lib/stats'
 import { kbSearchTool, kbPerformanceTool } from '../src/services/tools/kb'
 import { ALL_TOOLS, activeTools, describeAvailability } from '../src/services/tools'
 import { upgradeToHttps } from '../src/services/tools/web'
+import { normalizeProductName, similarity, matchHoldings } from '../src/services/tools/holdings'
 import { defaultToolConfig, type KnowledgeBase, type ToolConfig } from '../src/types'
 import { availablePersonas, personaToPrompt } from '../src/services/persona'
 import { buildAuditPrompt } from '../src/services/audit'
@@ -250,7 +251,11 @@ async function main() {
   check('付费搜索没配好时，查公告仍然可用',
     activeTools(ctx2).some((t) => t.name === 'stock_announcements'))
 
-  check('工具总数符合预期（3 知识库 + 2 行情 + 3 联网）', ALL_TOOLS.length === 8, String(ALL_TOOLS.length))
+  check(
+    '工具总数符合预期（3 知识库 + 2 行情 + 3 联网 + 1 核对持仓）',
+    ALL_TOOLS.length === 9,
+    String(ALL_TOOLS.length),
+  )
 
   // ---------- 7. 检索排序 ----------
   section('[7] 检索相关性')
@@ -295,7 +300,8 @@ async function main() {
     check('含「用框架推演不要类比历史」约束', prompt.includes('用框架推演'))
     check('含否决条件（他必须敢说不）', prompt.includes('否决条件'))
     check('含核心方法论', prompt.includes('核心方法论'))
-    check('含「不要荐股」约束', prompt.includes('不要荐股'))
+    // 策略已改：不再一概禁止推荐，而是"可以给方向 + 必须标清性质"
+    check('含推荐纪律（可以给方向）', prompt.includes('可以给方向性建议'))
     const noTool = personaToPrompt(persona, kb.author.name, { hasTools: false })
     check('无工具时提示词会说「这需要查证」', noTool.includes('这需要查证'))
 
@@ -312,7 +318,11 @@ async function main() {
     })
     check('检验提示词非空', audit.length > prompt.length, String(audit.length))
     check('立场是「审单子」不是预测', audit.includes('审他这笔单子'))
-    check('明令禁止荐股', audit.includes('别干'))
+    // 策略已改：不预测他的行为，但允许按框架给方向
+    check(
+      '不预测他的行为，但允许给方向',
+      audit.includes('那是在预测他的行为') && audit.includes('允许'),
+    )
     check('要求引用框架的名字', audit.includes('用它的名字'))
     check('要求区分「做对了」和「结果好」', audit.includes('结果好'))
     check('要求指出用户没问到的风险', audit.includes('没问到的风险'))
@@ -340,7 +350,10 @@ async function main() {
     })
     check('军师模式在扮演他', personaPrompt.includes('你在扮演'))
     check('军师模式带核心方法论', personaPrompt.includes('核心方法论'))
-    check('军师模式禁止荐股', personaPrompt.includes('不要荐股'))
+    check(
+      '军师模式允许推荐但要标清性质',
+      personaPrompt.includes('可以给方向性建议') && personaPrompt.includes('不要给精确买点'),
+    )
     check('军师模式要求先查证', personaPrompt.includes('先查证'))
     check('军师模式仍附历史观点作为佐证', personaPrompt.includes('他确实说过的话'))
     check('军师模式附客观表现（不许夸大）',
@@ -593,6 +606,82 @@ async function main() {
     '模型会把自动扣款当成高位补仓来批评')
   check('没定投的持仓不会凭空多出定投字段',
     !/示例股票B[^\n]*定投/.test(dcaPrompt))
+
+  // ---------- 推荐与联网同意 ----------
+  section('[O] 军师可以推荐板块/基金，但要符合三条纪律')
+  const recPrompt = buildSystemPrompt({
+    kbs: [kb],
+    question: '现在该买哪个板块',
+    mode: 'persona',
+    personaAuthorUid: kb.author.author_uid,
+    hasTools: true,
+    memory: { profile: {}, facts: [], holdings: [] },
+  })
+  check(
+    '不再一概「不要荐股」',
+    !recPrompt.includes('不要荐股'),
+    '旧规则会把它变成只会分析不会选的哑巴',
+  )
+  check('明确允许给方向', recPrompt.includes('允许给出具体方向'))
+  check('要求说明用的是哪条方法论', recPrompt.includes('用的是你哪条方法论'))
+  check('要求说明何时失效', recPrompt.includes('什么情况下这个建议会失效'))
+  check('仍禁止精确买点/目标价', recPrompt.includes('不要给精确买点'))
+  check(
+    '未授权时要求先问再联网',
+    recPrompt.includes('先用一句话问') && recPrompt.includes('可以吗'),
+  )
+  check('未授权时不能直接声称已查证', !recPrompt.includes('已授权联网'))
+
+  const autoPrompt = buildSystemPrompt({
+    kbs: [kb],
+    question: '现在该买哪个板块',
+    mode: 'persona',
+    personaAuthorUid: kb.author.author_uid,
+    hasTools: true,
+    allowOnline: true,
+    memory: { profile: {}, facts: [], holdings: [] },
+  })
+  check('授权后不再要求逐次询问', autoPrompt.includes('已授权联网'))
+  check('授权后仍保留推荐纪律', autoPrompt.includes('允许给出具体方向'))
+  check('涉及基金要对账持仓', autoPrompt.includes('check_holdings'))
+
+  // ---------- 基金名偏移的核对 ----------
+  section('[P] 核对持仓：基金名有偏移也能认出来')
+  check(
+    '归一化去掉份额类别 A/C',
+    normalizeProductName('建信上海金ETF联接A') === normalizeProductName('建信上海金ETF联接C'),
+    normalizeProductName('建信上海金ETF联接A'),
+  )
+  check(
+    '归一化去掉空格与括号',
+    normalizeProductName('中欧 医疗健康（混合）') === normalizeProductName('中欧医疗健康混合'),
+  )
+  check('完全不同的名字相似度很低', similarity('建信上海金ETF联接A', '嘉实中证稀有金属主题ETF') < 0.5)
+
+  const fakeHoldings = [
+    {
+      id: 'h1', name: '建信上海金ETF联接A', confirmed: true, source: 'screenshot' as const,
+      firstSeenAt: '', updatedAt: '',
+    },
+    {
+      id: 'h2', name: '嘉实中证稀有金属主题ETF发起联接C', confirmed: true, source: 'screenshot' as const,
+      firstSeenAt: '', updatedAt: '',
+    },
+  ]
+  const mExact = matchHoldings('建信上海金ETF联接C', fakeHoldings)
+  check(
+    '换成 C 份额也能匹配到（归一化后同只）',
+    mExact.length > 0 && mExact[0].holding.id === 'h1',
+    JSON.stringify(mExact.map((m) => [m.holding.name, m.score.toFixed(2)])),
+  )
+  check('匹配到的是「已持有」级别', mExact[0]?.level === 'exact', mExact[0]?.level ?? 'none')
+  const mOffset = matchHoldings('嘉实中证稀有金属主题ETF联接A', fakeHoldings)
+  check(
+    '份额不同也命中同一只',
+    mOffset.length > 0 && mOffset[0].holding.id === 'h2',
+    JSON.stringify(mOffset.map((m) => [m.holding.name, m.score.toFixed(2)])),
+  )
+  check('毫不相关的名字不误报', matchHoldings('贵州茅台', fakeHoldings).length === 0)
 
   report()
 }

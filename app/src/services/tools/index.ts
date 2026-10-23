@@ -1,10 +1,17 @@
 import type { ToolSchema } from '../llm'
+import { checkHoldingsTool } from './holdings'
 import { kbTools } from './kb'
 import { marketTools } from './market'
 import type { ToolContext, ToolDef } from './types'
 import { webTools } from './web'
 
-export const ALL_TOOLS: ToolDef[] = [...kbTools, ...marketTools, ...webTools]
+export const ALL_TOOLS: ToolDef[] = [
+  ...kbTools,
+  ...marketTools,
+  ...webTools,
+  // 「推荐之后核对持仓」—— 顺序放最后，模型会先查数据再核对
+  checkHoldingsTool,
+]
 
 export function toolByName(name: string): ToolDef | undefined {
   return ALL_TOOLS.find((t) => t.name === name)
