@@ -7,7 +7,7 @@
  *   · 军师 —— 用的是哪个知识库
  *   · 消息脚注 —— 每条回答生成时实际用了什么（事后可追溯）
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AdvisorMode, Session } from '@/types'
 import { useSessions } from '@/stores/sessions'
@@ -98,7 +98,19 @@ watch(
 async function scrollToBottom() {
   await nextTick()
   const el = chatEl.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+  // 补两次：消息里含图片/长文本时，append 之后 layout 可能还没撑开，
+  // 第一帧设 scrollTop 会滚不到位。rAF + setTimeout 各补一次 ——
+  // 这是安卓 WebView 上处理「刚插入还没 layout」的标准兜底。
+  requestAnimationFrame(() => {
+    const c = chatEl.value
+    if (c) c.scrollTop = c.scrollHeight
+  })
+  setTimeout(() => {
+    const c = chatEl.value
+    if (c) c.scrollTop = c.scrollHeight
+  }, 60)
 }
 
 /**
@@ -153,6 +165,44 @@ function resizeComposer() {
   // 输入区变高会挤压上面的聊天区，保持消息仍贴在底部
   void scrollToBottom()
 }
+
+/**
+ * 聚焦期间每 150ms 校验一次高度 —— 这一层**完全不依赖事件**。
+ *
+ * 为什么还要它：真机上出现过「打字不变高、退格就正常」，
+ * 说明中文输入法组合态下的 input / compositionend 时机在各家 WebView 上靠不住，
+ * rAF / setTimeout 也救不回来（可能都跑在重排之前）。
+ * 定时校验一到位，无论事件是否被吞、重排何时完成，
+ * 最迟 150ms 内框子都会长到正确高度。失焦立即停，不占后台资源。
+ */
+let composerTimer: number | null = null
+let lastComposerH = -1
+
+function startComposerWatch() {
+  if (composerTimer != null) return
+  composerTimer = window.setInterval(() => {
+    const el = taEl.value
+    if (!el || document.activeElement !== el) return
+    el.style.height = 'auto'
+    const border = Math.max(0, el.offsetHeight - el.clientHeight)
+    const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
+    if (h === lastComposerH) return // 高度没变就不动，避免无谓重排
+    lastComposerH = h
+    el.style.height = `${h}px`
+    el.scrollTop = el.scrollHeight
+  }, 150)
+}
+
+function stopComposerWatch() {
+  if (composerTimer != null) {
+    clearInterval(composerTimer)
+    composerTimer = null
+    lastComposerH = -1
+  }
+}
+
+// 离开会话页时把定时器收掉，别在后台空转
+onUnmounted(stopComposerWatch)
 
 async function onAttach(e: Event) {
   const inp = e.target as HTMLInputElement
@@ -433,6 +483,8 @@ const memoryHint = computed(() => {
             @keydown="onKeydown"
             @input="onComposerInput"
             @compositionend="onComposerInput"
+            @focus="startComposerWatch"
+            @blur="stopComposerWatch"
           />
           <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止

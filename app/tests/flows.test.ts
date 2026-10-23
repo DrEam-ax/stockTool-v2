@@ -395,7 +395,12 @@ describe('会话详情：能打字就必须能发送', () => {
     await router.push(`/s/${session.id}`)
     await router.isReady()
     const { default: SessionDetail } = await import('@/views/SessionDetail.vue')
-    const w = mount(SessionDetail, { global: { plugins: [router] } })
+    // 必须挂到 document 上：定时校验会检查 document.activeElement，
+    // 游离节点调 focus() 不会成为 activeElement，那条测试会假失败。
+    const w = mount(SessionDetail, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
     await flushPromises()
     await nextTick()
     return w
@@ -534,5 +539,41 @@ describe('会话详情：能打字就必须能发送', () => {
     stubScrollHeight(el, 78)
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     expect(el.style.height).toBe('78px')
+  })
+
+  /**
+   * 真机上「打字不变高、退格就正常」用事件层无论如何救不回来，
+   * 所以加了一层不依赖事件的定时校验：聚焦期间每 150ms 检查一次高度。
+   */
+  it('聚焦期间定时校验高度（完全不依赖事件）', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+
+    // 让 document.activeElement 指向它，否则定时器会跳过
+    el.focus()
+    await ta.trigger('focus')
+    expect(document.activeElement).toBe(el)
+
+    // 只改 scrollHeight，**不派发任何事件**
+    stubScrollHeight(el, 84)
+    await new Promise((r) => setTimeout(r, 220))
+    expect(el.style.height).toBe('84px')
+
+    await ta.trigger('blur')
+  })
+
+  it('失焦后停止校验，不再改动高度', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    el.focus()
+    await ta.trigger('focus')
+    await ta.trigger('blur')
+    el.blur()
+
+    stubScrollHeight(el, 96)
+    await new Promise((r) => setTimeout(r, 220))
+    expect(el.style.height).not.toBe('96px')
   })
 })
