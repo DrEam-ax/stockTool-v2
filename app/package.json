@@ -1,7 +1,7 @@
 {
   "name": "stocktool-app",
   "private": true,
-  "version": "1.6.7",
+  "version": "1.6.8",
   "type": "module",
   "description": "选股/选基金助手：载入知识库、配置自己的 LLM、带全局记忆的多会话分析",
   "scripts": {

@@ -165,6 +165,13 @@ export const stockQuoteTool: ToolDef = {
         throw new Error('返回内容无法解析，接口格式可能已变化')
       }
 
+      // 部分标的拿不到时不能整批失败。
+      // 腾讯对不支持的代码会返回空内容（例如某些基金/场内代码），
+      // 原来只要有一条解析不出、或者整批都解析不出就抛错，
+      // 用户看到的是「查询行情失败」，其实其他标的的数据是好的。
+      const got = new Set(quotes.map((q) => q.code))
+      const missing = usable.filter((s) => !got.has(s.replace(/^(sh|sz|bj)/i, '')))
+
       const lines = quotes.map((q) => {
         const dir = q.changePct > 0 ? '涨' : q.changePct < 0 ? '跌' : '平'
         return (
@@ -185,6 +192,7 @@ export const stockQuoteTool: ToolDef = {
           `实时行情（来源：腾讯财经，${new Date().toLocaleString('zh-CN')}）：\n\n` +
           lines.join('\n\n') +
           (unresolved.length ? `\n\n未能识别：${unresolved.join('、')}` : '') +
+          (missing.length ? `\n\n接口没返回这几只（可能代码不支持）：${missing.join('、')}` : '') +
           '\n\n请注意：行情有延迟，且不同数据源的复权方式不同。',
       }
     } catch (e) {

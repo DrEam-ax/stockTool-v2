@@ -376,7 +376,7 @@ export interface ToolConfig {
 
 export function defaultToolConfig(): ToolConfig {
   return {
-    maxRounds: 6,
+    maxRounds: 9,
     kb: { enabled: true, maxResults: 12 },
     // 开箱即用：默认走免密兜底，用户什么都不用配
     webSearch: { enabled: true, provider: 'builtin', apiKey: '', maxResults: 6 },

@@ -22,6 +22,7 @@ import { kbSearchTool, kbPerformanceTool } from '../src/services/tools/kb'
 import { ALL_TOOLS, activeTools, describeAvailability } from '../src/services/tools'
 import { upgradeToHttps } from '../src/services/tools/web'
 import { normalizeProductName, similarity, matchHoldings } from '../src/services/tools/holdings'
+import { checkHoldingsTool } from '../src/services/tools/holdings'
 import { defaultToolConfig, type KnowledgeBase, type ToolConfig } from '../src/types'
 import { availablePersonas, personaToPrompt } from '../src/services/persona'
 import { buildAuditPrompt } from '../src/services/audit'
@@ -682,6 +683,22 @@ async function main() {
     JSON.stringify(mOffset.map((m) => [m.holding.name, m.score.toFixed(2)])),
   )
   check('毫不相关的名字不误报', matchHoldings('贵州茅台', fakeHoldings).length === 0)
+
+  // 批量核对：真机上模型逐个调用把轮数吃光了，所以工具必须支持一次传多个
+  section('[Q] 查证效率（轮数被工具吃光是「回答中断」的根因）')
+  check(
+    '默认轮数不再是 6（实测一次研究要十几个工具调用）',
+    defaultToolConfig().maxRounds >= 9,
+    String(defaultToolConfig().maxRounds),
+  )
+  const multi = await checkHoldingsTool.run(
+    { names: ['建信上海金ETF联接C', '嘉实中证稀有金属主题ETF联接A', '完全不存在的东西'] },
+    { kbs: [], config: defaultToolConfig(), holdings: fakeHoldings },
+  )
+  check('一次核对多个名字', multi.ok, multi.content.slice(0, 120))
+  check('批量结果里每只都有结论', (multi.content.match(/：/g) ?? []).length >= 3)
+  check('已持有的会被标出来', multi.content.includes('已持有'))
+  check('未持有的也会说明', multi.content.includes('未持有'))
 
   report()
 }

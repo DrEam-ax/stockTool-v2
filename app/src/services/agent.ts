@@ -7,8 +7,11 @@
  *    用户能看到 AI 查了什么、查到了几条。这是判断答案可信度的唯一依据，
  *    也是防幻觉最有效的手段 —— 模型编造时，那一栏会是空的。
  *
- * 2. **有轮数上限。** 默认 6 轮。没有上限的 Agent 会在模型犯轴时
+ * 2. **有轮数上限。** 默认 9 轮。没有上限的 Agent 会在模型犯轴时
  *    无限调用工具烧 token，而用户只能看着进度条转。
+ *    但也不能太小：一次"自己去看行情再推荐"的任务实测就会用掉十几个工具调用，
+ *    6 轮完全不够 —— 会出现「工具全跑完了、却没留下写答案的轮次」，
+ *    用户只看到一句"已到上限，可能不完整"而看不到任何结论。
  *
  * 3. **工具失败不是错误。** 失败结果照样回给模型，并在提示里明确
  *    「如实告知用户拿不到，不要编造」。断网时模型仍能基于知识库回答。
@@ -231,6 +234,17 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   usage.prompt += finalRes.usage?.prompt ?? 0
   usage.completion += finalRes.usage?.completion ?? 0
   answer = finalRes.text || finalText
+
+  // 兜底：收尾那次也可能什么都没返回（模型超时/被截断/返回空）。
+  // 这时不能让用户面对一个空回答 + 一句"不完整"，至少把已查到的东西列出来。
+  if (!answer.trim()) {
+    const lines = ['（模型没有给出完整回答，下面是这次已经查到的结果）', '']
+    for (const r of records) {
+      lines.push(`- ${r.display}${r.summary ? `：${r.summary}` : ''}`)
+    }
+    if (!records.length) lines.push('- 没有成功调用任何工具')
+    answer = lines.join('\n')
+  }
 
   return {
     answer,
