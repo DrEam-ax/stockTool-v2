@@ -643,6 +643,90 @@ def cmd_author_alias(args, cfg: Config) -> int:
     return 0
 
 
+def cmd_merge_author(args, cfg: Config) -> int:
+    """把两个作者合并成一个 —— 同一个人跨平台建了两条 author 记录时用。
+
+    为什么需要：author 的主键是 (source, source_uid)，
+    雪球用 uid、B站用 mid，同一个人必然建成两条记录。
+    不合并的话，画像和决策框架就分裂成两个「军师」，
+    而实际上他的逻辑是一套。
+
+    合并会：
+      · 把所有 doc / opinion 的 author_id 指向目标作者
+      · 把来源平台的标识并进 platforms（保留跨平台信息）
+      · 删掉被并入的那条 author 记录
+    冲突安全：doc 的 UNIQUE 是 (source, external_id)，两边 source 不同，不会撞。
+    """
+    import json as _json
+
+    with session(cfg) as con:
+        init_db(con)
+        src = con.execute(
+            "SELECT id, name, source, source_uid, platforms FROM author WHERE name = ?",
+            (args.source_name,),
+        ).fetchone()
+        dst = con.execute(
+            "SELECT id, name, source, source_uid, platforms FROM author WHERE name = ?",
+            (args.target_name,),
+        ).fetchone()
+        if not src:
+            print(f"没有找到要合并掉的作者：{args.source_name}")
+            return 1
+        if not dst:
+            print(f"没有找到目标作者：{args.target_name}")
+            return 1
+        if src["id"] == dst["id"]:
+            print("两个名字指向同一条记录，无需合并")
+            return 0
+
+        n_doc = con.execute(
+            "SELECT COUNT(*) c FROM doc WHERE author_id = ?", (src["id"],)
+        ).fetchone()["c"]
+        n_op = con.execute(
+            "SELECT COUNT(*) c FROM opinion WHERE author_id = ?", (src["id"],)
+        ).fetchone()["c"]
+
+        print(f"合并：「{src['name']}」({src['source']}) → 「{dst['name']}」({dst['source']})")
+        print(f"  将迁移 {n_doc} 篇文档、{n_op} 条观点")
+
+        if args.dry_run:
+            print("  --dry-run：未做任何修改")
+            return 0
+
+        con.execute("UPDATE doc SET author_id = ? WHERE author_id = ?",
+                    (dst["id"], src["id"]))
+        con.execute("UPDATE opinion SET author_id = ? WHERE author_id = ?",
+                    (dst["id"], src["id"]))
+
+        # 把来源平台并进目标作者的 platforms
+        try:
+            plats = _json.loads(dst["platforms"] or "[]")
+            if not isinstance(plats, list):
+                plats = []
+        except (TypeError, ValueError):
+            plats = []
+        entry = {"source": src["source"], "uid": src["source_uid"],
+                 "name": src["name"]}
+        if not any(isinstance(p, dict) and p.get("source") == src["source"] for p in plats):
+            plats.append(entry)
+        con.execute("UPDATE author SET platforms = ? WHERE id = ?",
+                    (_json.dumps(plats, ensure_ascii=False), dst["id"]))
+
+        con.execute("DELETE FROM author WHERE id = ?", (src["id"],))
+        con.commit()
+
+        left_doc = con.execute(
+            "SELECT COUNT(*) c FROM doc WHERE author_id = ?", (dst["id"],)
+        ).fetchone()["c"]
+        left_op = con.execute(
+            "SELECT COUNT(*) c FROM opinion WHERE author_id = ?", (dst["id"],)
+        ).fetchone()["c"]
+        print(f"  完成：目标作者现在有 {left_doc} 篇文档、{left_op} 条观点")
+        print(f"  跨平台身份：{_json.dumps(plats, ensure_ascii=False)}")
+        print("  下一步：重新跑 profile-author，让画像和决策框架覆盖两个平台。")
+    return 0
+
+
 def cmd_dedupe(args, cfg: Config) -> int:
     """标记重复观点。大V 反复顶帖/分别回复会生成多条相同帖子，必须去重。"""
     from .backtest.dedupe import duplicate_examples, mark_duplicates
@@ -891,7 +975,9 @@ def cmd_extract(args, cfg: Config) -> int:
                                limit=args.limit,
                                latest=getattr(args, "latest", None),
                                concurrency=getattr(args, "concurrency", 1) or 1,
-                               purge=not getattr(args, "no_purge", False))
+                               purge=not getattr(args, "no_purge", False),
+                               source=getattr(args, "source", None),
+                               missing=getattr(args, "missing", False))
         print(f"处理文档 {stats['docs']} 篇，抽出观点 {stats['opinions']} 条"
               f"（已归属标的 {stats['resolved']}，未归属 {stats['unresolved']}）")
         if stats.get("purged"):
@@ -1134,6 +1220,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--source", help="源标识，默认 manual")
     s.set_defaults(func=cmd_import)
 
+    s = sub.add_parser("merge-author",
+                       help="把两条作者记录合并（同一人跨平台建了两条时用）")
+    s.add_argument("--from", dest="source_name", required=True,
+                   help="被合并掉的作者名")
+    s.add_argument("--into", dest="target_name", required=True,
+                   help="合并到的目标作者名")
+    s.add_argument("--dry-run", action="store_true", help="只显示会迁移多少，不改数据")
+    s.set_defaults(func=cmd_merge_author)
+
     s = sub.add_parser("collect-xueqiu", help="全量归档某个雪球账号的发言")
     s.add_argument("who", help="雪球昵称，或数字 uid")
     s.add_argument("--cookie", help="直接传 Cookie 字符串（默认读配置文件/环境变量）")
@@ -1199,6 +1294,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-purge", action="store_true",
                    help="重建时不清理旧观点（默认会清理，避免幽灵数据）")
     s.add_argument("--limit", type=int, help="只处理前 N 篇（按时间正序）")
+    s.add_argument("--source", help="只处理某个来源（如 bilibili），多平台合并后补跑用")
+    s.add_argument("--missing", action="store_true",
+                   help="只处理还没有观点的文档（增量补齐）")
     s.add_argument("--show", type=int, default=0, help="打印最近 N 条观点")
     s.set_defaults(func=cmd_extract)
 

@@ -99,7 +99,9 @@ def run_extraction(con: sqlite3.Connection, cfg, lex, resolver, *,
                    latest: int | None = None,
                    purge: bool = True,
                    concurrency: int = 1,
-                   progress_every: int = 50) -> dict:
+                   progress_every: int = 50,
+                   source: str | None = None,
+                   missing: bool = False) -> dict:
     """抽取观点并落库。
 
     extractor:
@@ -108,6 +110,8 @@ def run_extraction(con: sqlite3.Connection, cfg, lex, resolver, *,
       "both" —— 两者都跑，冲突时 LLM 优先
 
     latest: 只处理最近 N 篇（按发布日期倒序）。日常增量跑用它。
+    source: 只处理某个来源（如 bilibili），多平台合并后补跑新平台用。
+    missing: 只处理还没有观点的文档。
     concurrency: LLM 并发数。串行跑 2000 多篇要一两个小时，
                  并发 6 路能把时间压到十几分钟。
                  注意规则抽取仍在主线程做 —— resolver 内部有可变计数器，
@@ -127,12 +131,25 @@ def run_extraction(con: sqlite3.Connection, cfg, lex, resolver, *,
         )
 
     order = "DESC" if latest else "ASC"
+    # source / missing 过滤：
+    #   多平台语料合并后，只想补跑新平台时不该把老平台的几千篇重跑一遍
+    #   （幂等键保证结果不变，但 LLM 调用是真金白银）。
+    #   missing=True 只处理还没有任何观点的文档，适合增量补齐。
+    where: list[str] = []
+    params: list[object] = []
+    if source:
+        where.append("d.source = ?")
+        params.append(source)
+    if missing:
+        where.append("NOT EXISTS (SELECT 1 FROM opinion o WHERE o.doc_id = d.id)")
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     sql = f"""
         SELECT d.id, d.author_id, d.published_at, d.published_date, d.permalink, t.text
         FROM doc d JOIN doc_text t ON t.doc_id = d.id
+        {where_sql}
         ORDER BY d.published_date {order}, d.id {order}
     """
-    docs = con.execute(sql).fetchall()
+    docs = con.execute(sql, params).fetchall()
     if latest:
         docs = docs[:latest]
     if limit:

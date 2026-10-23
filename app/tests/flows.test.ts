@@ -11,13 +11,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { defineComponent, h, nextTick } from 'vue'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve, basename } from 'node:path'
 import KnowledgeView from '@/views/KnowledgeView.vue'
 import SessionsView from '@/views/SessionsView.vue'
 import { useKnowledge } from '@/stores/knowledge'
 import { useSessions } from '@/stores/sessions'
 import { useProviders } from '@/stores/providers'
+import { parseKbBytes } from '@/services/kb'
+import { hasPersona } from '@/services/persona'
 import * as db from '@/lib/db'
 
 const Blank = defineComponent({ render: () => h('div') })
@@ -63,6 +65,47 @@ async function resetAll() {
  * 否则任何人 clone 下来测试都跑不起来。
  */
 const KB_PATH = resolve(__dirname, '../../data/kb/demo_junshi_persona.stkb')
+
+describe('仓库里所有演示知识库都必须带决策框架', () => {
+  /**
+   * 曾经踩过的坑：demo_junshi_1/2/3 只有历史观点、没有 persona，
+   * 用户载入后新建会话，App 提示「请教军师需要知识库里带决策框架」——
+   * 看起来像 bug，其实是那几份库确实没有。
+   *
+   * 演示库的用途就是让人一眼看懂功能，**每一份都应该能直接演示军师模式**。
+   */
+  const KB_DIR = resolve(__dirname, '../../data/kb')
+  const files = readdirSync(KB_DIR).filter(
+    (f) => f.startsWith('demo_junshi') && f.endsWith('.stkb'),
+  )
+
+  it('至少存在一个演示知识库', () => {
+    expect(files.length).toBeGreaterThan(0)
+  })
+
+  for (const name of files) {
+    it(`${name} 带可用的决策框架`, () => {
+      const bytes = new Uint8Array(readFileSync(resolve(KB_DIR, name)))
+      const { kb } = parseKbBytes(bytes, bytes.byteLength)
+      expect(hasPersona(kb.author)).toBe(true)
+      // 军师模式渲染需要方法论；只有 rules 没有 frameworks 也能跑，但有框架更好
+      expect((kb.author.persona?.frameworks?.length ?? 0)).toBeGreaterThan(0)
+      expect((kb.author.persona?.decision_rules?.length ?? 0)).toBeGreaterThan(0)
+    })
+
+    it(`${name} 的 kb_id 不与其它演示库重复`, () => {
+      const bytes = new Uint8Array(readFileSync(resolve(KB_DIR, name)))
+      const { kb } = parseKbBytes(bytes, bytes.byteLength)
+      const same = files.filter((f) => {
+        if (f === name) return false
+        const b = new Uint8Array(readFileSync(resolve(KB_DIR, f)))
+        return parseKbBytes(b, b.byteLength).kb.manifest.kb_id === kb.manifest.kb_id
+      })
+      // 相同 kb_id 会被 App 当成「同库升级、覆盖」，载入多个只剩一个
+      expect(same).toEqual([])
+    })
+  }
+})
 
 describe('载入知识库：内容与决策框架都要显示出来', () => {
   beforeEach(resetAll)
@@ -227,5 +270,105 @@ describe('新建会话：三种模式', () => {
     await nextTick()
     expect(w.text()).toMatch(/还没有载入知识库|知识库/)
     expect(w.text()).not.toContain('undefined')
+  })
+})
+
+describe('会话详情：能打字就必须能发送', () => {
+  /**
+   * 用户反馈：输入框里明明有字，但「发送」按钮是灰的、点不动。
+   *
+   * 按钮的禁用条件是 `!input.trim() && !attached.length` ——
+   * 也就是说输入框里只要有字就必须可点。这里把那条款式化地钉住：
+   * 打字 → 按钮可用 → 点下去真的把消息进了会话。
+   */
+  beforeEach(resetAll)
+
+  async function mountSession() {
+    // 有模型，避免 noProvider 走「去设置里配」的提示分支
+    const p = useProviders()
+    p.providers.value = [
+      {
+        id: 'pv_test',
+        name: '测试模型',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-test',
+        model: 'test-model',
+        supportsVision: false,
+        supportsJson: true,
+        temperature: 0.3,
+        maxTokens: 512,
+        isDefault: true,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    p.loaded.value = true
+
+    const s = useSessions()
+    const session = await s.create({
+      title: '新会话',
+      activeKbIds: [],
+      useGlobalMemory: true,
+      mode: 'research',
+      personaAuthorUid: null,
+      auditContext: null,
+    } as never)
+    s.loaded.value = true
+
+    const router = await makeRouter()
+    await router.push(`/s/${session.id}`)
+    await router.isReady()
+    const { default: SessionDetail } = await import('@/views/SessionDetail.vue')
+    const w = mount(SessionDetail, { global: { plugins: [router] } })
+    await flushPromises()
+    await nextTick()
+    return w
+  }
+
+  it('发送按钮**永远可点**（不因输入内容变灰）', async () => {
+    // 曾经的实现按 `!input.trim()` 禁用按钮。问题在于输入法的组合态下
+    // v-model 可能还没同步，输入框里明明有字，按钮却是灰的、点不动。
+    // 现在改成永远可点，空内容时给可见提示。
+    const w = await mountSession()
+    const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+    expect(btn).toBeTruthy()
+    expect(btn!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('输入文字后点击发送，消息真的进入会话', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    expect(ta.exists()).toBe(true)
+    await ta.setValue('结合最近的行情，我这个持仓怎么样')
+    await nextTick()
+    const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+    expect(btn!.attributes('disabled')).toBeUndefined()
+    await btn!.trigger('click')
+    await flushPromises()
+    // 发送会给会话追加一条 user 消息（网络请求的失败不影响入列）
+    const msgs = useSessions().sessions.value[0].messages
+    expect(msgs.some((m) => m.role === 'user' && m.content.includes('持仓'))).toBe(true)
+  })
+
+  it('空内容点击发送给可见提示，而不是静默无反应', async () => {
+    const w = await mountSession()
+    const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+    await btn!.trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(w.text()).toContain('还没输入内容')
+  })
+
+  it('v-model 失同步时仍能发送（读 DOM 兜底）', async () => {
+    // 模拟真实机型上出现过的情形：DOM 里有字，但 Vue 状态是空的。
+    // 做法是直接改 DOM 的 value 而不触发 input 事件 —— v-model 感知不到。
+    const w = await mountSession()
+    const ta = w.find('textarea').element as HTMLTextAreaElement
+    ta.value = '结合最近的行情，我这个持仓怎么样'
+    await nextTick()
+    const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+    await btn!.trigger('click')
+    await flushPromises()
+    const msgs = useSessions().sessions.value[0].messages
+    expect(msgs.some((m) => m.role === 'user' && m.content.includes('持仓'))).toBe(true)
   })
 })

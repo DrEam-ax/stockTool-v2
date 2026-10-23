@@ -42,6 +42,7 @@ const sessionId = computed(() => String(route.params.id || ''))
 const session = computed<Session | undefined>(() => sessions.find(sessionId.value))
 
 const input = ref('')
+const taEl = ref<HTMLTextAreaElement | null>(null)
 const attached = ref<string[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const chatEl = ref<HTMLElement | null>(null)
@@ -93,8 +94,17 @@ async function onAttach(e: Event) {
 async function onSend() {
   const s = session.value
   if (!s || streaming.value) return
-  const text = input.value.trim()
-  if (!text && !attached.value.length) return
+  // 兜底读一次 DOM。
+  // 踩过的坑：某些输入法/机型下 v-model 没能同步（输入法还在组合态、
+  // 或输入事件被吞），输入框里明明有字，但 input.value 还是空的，
+  // 于是「发送」按钮一直是禁用态、点了没反应。
+  // 与设置页的 API Key 是同一类问题：不信任单一状态源，DOM 里有什么就用什么。
+  const domText = (taEl.value?.value ?? '').trim()
+  const text = input.value.trim() || domText
+  if (!text && !attached.value.length) {
+    error.value = '还没输入内容'
+    return
+  }
   if (noProvider.value) {
     error.value = '还没有配置模型，请先到「设置」添加'
     return
@@ -103,6 +113,8 @@ async function onSend() {
   const images = [...attached.value]
   input.value = ''
   attached.value = []
+  // 状态被清空后同步清掉 DOM，否则输入法里的残留文字会留在屏幕上
+  if (taEl.value) taEl.value.value = ''
   await sessions.send(s.id, text, images)
 }
 
@@ -339,28 +351,21 @@ const memoryHint = computed(() => {
           />
           <div class="attach" @click="fileInput?.click()">📎</div>
           <textarea
+            ref="taEl"
             v-model="input"
             rows="1"
             placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"
             @keydown="onKeydown"
           />
-          <button
-            v-if="streaming"
-            class="btn danger"
-            style="height: 38px"
-            @click="sessions.abort()"
-          >
+          <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止
           </button>
-          <button
-            v-else
-            class="btn primary"
-            style="height: 38px"
-            :disabled="!input.trim() && !attached.length"
-            @click="onSend"
-          >
-            发送
-          </button>
+          <!--
+            故意**不**按输入内容禁用：输入法的组合态下 v-model 可能还没同步，
+            禁用会让用户「打了字却点不动」。改成永远可点，
+            空内容时在 onSend 里给出可见提示，而不是让按钮变成灰色。
+          -->
+          <button v-else class="btn primary" style="height: 38px" @click="onSend">发送</button>
         </div>
       </div>
     </template>

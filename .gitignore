@@ -1,5 +1,9 @@
 # ============ 凭据：绝对不能进版本库 ============
 config/xueqiu_cookie.txt
+# 用通配而不是具体文件名：工具会生成 bilibili_cookie_1.txt / _2.txt
+# （每个账号一份），写死名字漏掉过，差点把登录态提交上去。
+config/bilibili_cookie*.txt
+config/bilibili_accounts.json
 config/llm_api_key.txt
 config/settings.json
 .env
@@ -12,6 +16,13 @@ config/settings.json
 # 推送前敏感词清单：里面写着真实人物标识，
 # 脚本读它做检查，但清单本身绝不能进库（否则等于又泄漏一次）
 tools/.prepush-forbidden.txt
+
+# B站 采集脚本：里面硬编码了目标 UP 主的 mid，
+# 对别人没有复用价值，且会暴露分析对象，所以不进公开仓库。
+tools/bili_*.py
+tools/_bench_asr.py
+tools/_check_asr_env.py
+tools/_test_gpu_asr.py
 
 # ============ 抓取的语料与派生内容 ============
 # 原始帖子与整库快照体积大，而且是**真实人物的作品**。
