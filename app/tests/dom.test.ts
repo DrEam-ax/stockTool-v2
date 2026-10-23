@@ -307,6 +307,12 @@ describe('布局：元素不能互相挤占', () => {
     expect(b).toMatch(/max-height:\s*\d+px/)
     expect(b).toContain('overflow-y: auto')
   })
+
+  it('用 CSS 原生 field-sizing 定高（不依赖 JS 时机）', () => {
+    // 输入法组合态下 JS 读 scrollHeight 可能拿到旧值，
+    // 交给浏览器原生按内容定高最稳；JS 只作为旧内核的兜底。
+    expect(block('.composer textarea')).toContain('field-sizing: content')
+  })
 })
 
 describe('定投：识别结果卡片上能勾选周期和金额', () => {

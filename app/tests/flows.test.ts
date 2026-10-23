@@ -505,4 +505,34 @@ describe('会话详情：能打字就必须能发送', () => {
     await nextTick()
     expect(el.style.height).toBe('40px')
   })
+
+  /**
+   * 中文输入法的组合态问题（真机才暴露）：
+   *   打字时文字处于组合态，Android WebView 会推迟重排，
+   *   此刻 scrollHeight 还是旧值 → 框子不变高；
+   *   退格不是组合态 → 立即重排 → 正常。
+   * 所以 `compositionend` 必须也触发重算。
+   */
+  it('输入法组合结束会重算高度', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 84)
+    await ta.trigger('compositionend')
+    expect(el.style.height).toBe('84px')
+  })
+
+  it('input 之后下一帧会再算一次（兜住组合态的重排推迟）', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 50)
+    await ta.trigger('input')
+    expect(el.style.height).toBe('50px')
+
+    // 模拟「事件当帧读到旧值、重排完成后变高」
+    stubScrollHeight(el, 78)
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    expect(el.style.height).toBe('78px')
+  })
 })

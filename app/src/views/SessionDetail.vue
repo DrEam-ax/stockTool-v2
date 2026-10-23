@@ -101,6 +101,30 @@ async function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight
 }
 
+/**
+ * 输入时重算输入框高度。
+ *
+ * 为什么要「算两次」——这是真机才暴露的问题：
+ *   中文输入法打字时文字处于**组合态**（拼音还没上屏），
+ *   部分 Android WebView 会推迟对新增文字的重排，
+ *   此刻读 scrollHeight 拿到的还是旧值，于是框子不变高。
+ *   等一帧（rAF）再算一次就对了。
+ *
+ * 这个解释能对上用户反馈的全部现象：
+ *   · 打字 → 组合态 → 重排推迟 → 不变高
+ *   · 退格删字 → 不是组合态 → 重排立刻发生 → 正常变高
+ *   · 再打字 → 又进组合态 → 又不行
+ * 而且 `v-model` 在组合态是故意不更新状态的，所以靠 watch 也兜不住。
+ */
+function onComposerInput() {
+  resizeComposer()
+  // 组合态下的补算：等浏览器重排完成。两层兜底 ——
+  //   rAF：正常情况下重排后的第一帧
+  //   setTimeout(0)：某些 WebView 的组合态结束后还会晚一拍才更新 scrollHeight
+  requestAnimationFrame(resizeComposer)
+  setTimeout(resizeComposer, 0)
+}
+
 /** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
 const COMPOSER_MAX_H = 130
 
@@ -407,7 +431,8 @@ const memoryHint = computed(() => {
             rows="1"
             placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"
             @keydown="onKeydown"
-            @input="resizeComposer"
+            @input="onComposerInput"
+            @compositionend="onComposerInput"
           />
           <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止

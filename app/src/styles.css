@@ -750,6 +750,10 @@ textarea {
 }
 
 .composer textarea {
+  /* 原生按内容定高（Chrome 123+ / Android WebView 123+）。
+     有它就不依赖 JS 时机：输入法组合态下浏览器自己就把框撑开，
+     JS 那套（input / compositionend / rAF）只作为旧内核的兜底。 */
+  field-sizing: content;
   min-height: 40px;
   /* 高度由 JS 按内容算（约 5 行封顶），这里只兜底上限 */
   max-height: 130px;

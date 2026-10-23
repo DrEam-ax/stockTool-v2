@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>用真实 Vue 复现输入框自增高</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f1115; color: #e6e8ee; font-family: system-ui, sans-serif; }
+  .page-full { padding-bottom: 56px; height: 100dvh; display: flex;
+               flex-direction: column; max-width: 720px; margin: 0 auto; }
+  .chat { flex: 1; overflow-y: auto; min-height: 0; }
+  .composer { border-top: 1px solid #2a3040; padding: 8px 12px; background: #0f1115; }
+  .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+  input[type='text'], textarea, select {
+    width: 100%; background: #1d212c; border: 1px solid #2a3040;
+    border-radius: 8px; padding: 9px 11px; font-size: 14px; outline: none;
+  }
+  textarea { resize: vertical; min-height: 76px; line-height: 1.5; }
+  .composer textarea {
+    field-sizing: content;  /* 与 app 的 styles.css 保持一致 */
+    min-height: 40px; max-height: 130px; resize: none;
+    overflow-y: auto; padding: 9px 11px;
+  }
+  .attach { flex-shrink: 0; padding: 8px; }
+  .send { flex-shrink: 0; height: 38px; padding: 0 16px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<pre id="out" style="position:fixed;bottom:0;left:0;right:0;font-size:9px"></pre>
+
+<script type="module">
+import { createApp, ref, watch, nextTick } from '/node_modules/vue/dist/vue.esm-browser.prod.js'
+
+const COMPOSER_MAX_H = 130
+const log = []
+
+const App = {
+  template: `
+    <div class="page-full">
+      <div class="chat"></div>
+      <div class="composer">
+        <div class="composer-row">
+          <div class="attach">📎</div>
+          <textarea ref="taEl" v-model="input" rows="1"
+                    @input="resizeComposer"></textarea>
+          <button class="send">发送</button>
+        </div>
+      </div>
+    </div>`,
+  setup() {
+    const input = ref('')
+    const taEl = ref(null)
+
+    // —— 与 SessionDetail.vue 完全一致的实现 ——
+    function resizeComposer() {
+      const el = taEl.value
+      if (!el) return
+      el.style.height = 'auto'
+      const border = Math.max(0, el.offsetHeight - el.clientHeight)
+      const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
+      el.style.height = `${h}px`
+      el.scrollTop = el.scrollHeight
+    }
+
+    watch(input, async () => {
+      await nextTick()
+      resizeComposer()
+    })
+
+    return { input, taEl, resizeComposer }
+  },
+}
+
+const vm = createApp(App).mount('#app')
+
+// 拿到真实 textarea 做测量
+const ta = document.querySelector('.composer textarea')
+
+function measure(tag) {
+  const r = ta.getBoundingClientRect()
+  log.push({
+    tag,
+    value: ta.value.replace(/\n/g, '⏎').slice(0, 18),
+    vueState: (vm.input ?? '').replace(/\n/g, '⏎').slice(0, 18),
+    inlineH: ta.style.height,
+    rectH: Math.round(r.height * 100) / 100,
+    scrollH: ta.scrollHeight,
+    clientH: ta.clientHeight,
+    scrollable: ta.scrollHeight - ta.clientHeight,
+  })
+}
+
+// 关键：模拟**中文输入法**的真实事件序列
+//   compositionstart → input(isComposing=true) → compositionend → input(isComposing=false)
+// 之前只派发普通 input 是测不出组合态问题的。
+//
+// 注意：驱动循环里**不要用 requestAnimationFrame 做等待**。
+// headless 的 --virtual-time-budget 下 rAF 不会被触发，整个脚本会卡死。
+// 用 setTimeout 等待即可；App 自己那次 rAF 补算会在真实设备上正常跑。
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+async function typeWithIme(text) {
+  ta.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  ta.value = text
+  ta.selectionStart = ta.selectionEnd = text.length
+  ta.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+  await nextTick()
+  await wait(40)
+  ta.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: text }))
+  ta.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: false }))
+  await nextTick()
+  await wait(60)
+}
+
+const steps = [
+  ['IME 打第 1 段', '结合最近的行情'],
+  ['IME 继续打到换行', '结合最近的行情，我这个持仓怎么样'],
+  ['IME 再打长', '结合最近的行情，我这个持仓怎么样，帮我看看半导体这块'],
+  ['退格删一个字', '结合最近的行情，我这个持仓怎么样，帮我看看半导体这'],
+  ['IME 再打字', '结合最近的行情，我这个持仓怎么样，帮我看看半导体这块'],
+  ['多行粘贴', '第一行\n第二行\n第三行\n第四行\n第五行'],
+]
+
+try {
+  measure('初始')
+  for (const [tag, text] of steps) {
+    if (tag === '多行粘贴') {
+      // 粘贴不走组合态：直接 input
+      ta.value = text
+      ta.selectionStart = ta.selectionEnd = text.length
+      ta.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: false }))
+      await nextTick()
+      await wait(60)
+    } else {
+      await typeWithIme(text)
+    }
+    measure(tag)
+  }
+  document.getElementById('out').textContent = 'RESULT_JSON:' + JSON.stringify(log)
+} catch (e) {
+  document.getElementById('out').textContent =
+    'RESULT_ERROR:' + (e && e.stack ? e.stack : String(e))
+}
+
+document.getElementById('out').textContent = 'RESULT_JSON:' + JSON.stringify(log)
+</script>
+</body>
+</html>
