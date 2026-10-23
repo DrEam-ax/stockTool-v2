@@ -983,6 +983,8 @@ textarea {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  /* 弹窗打开时，遮罩上的滑动不再链到背景页面（防滚动穿透） */
+  overscroll-behavior: contain;
 }
 
 .modal {
@@ -994,6 +996,8 @@ textarea {
   max-height: 88dvh;
   overflow-y: auto;
   padding: 16px 16px calc(20px + var(--safe-b));
+  /* 弹窗内容滚到边界后，不再把滚动传给遮罩/背景（用户实测：滑动会带动背景页面） */
+  overscroll-behavior: contain;
 }
 
 .modal h2 {
