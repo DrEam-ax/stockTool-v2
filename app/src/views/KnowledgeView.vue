@@ -9,6 +9,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { KnowledgeBase } from '@/types'
 import { useKnowledge } from '@/stores/knowledge'
+import TabIcon from '@/components/TabIcon.vue'
 import { kbPerformance } from '@/services/prompt'
 import { verdict } from '@/lib/stats'
 import { describeKb } from '@/services/kb'
@@ -104,7 +105,7 @@ const enabledCount = computed(() => kbs.value.filter((k) => k.enabled).length)
     </button>
 
     <div v-if="!kbs.length" class="empty">
-      <div class="big">📚</div>
+      <div class="big"><TabIcon name="kb" :size="36" /></div>
       还没有知识库<br />
       载入一个后，AI 就会基于其中的历史观点来回答问题
     </div>
@@ -284,7 +285,7 @@ const enabledCount = computed(() => kbs.value.filter((k) => k.enabled).length)
           </div>
 
           <div class="alert info">
-            载入这个知识库后，新建会话时可选「🔍 检验我的操作」或「🧠 请教军师」，
+            载入这个知识库后，新建会话时可选「检验我的操作」或「请教军师」，
             让它用上面这套框架推演，而不是复述历史观点。
           </div>
         </template>

@@ -14,6 +14,8 @@ import type { AdvisorMode, Session } from '@/types'
 import { useSessions } from '@/stores/sessions'
 import { useKnowledge } from '@/stores/knowledge'
 import { useProviders } from '@/stores/providers'
+import TabIcon from '@/components/TabIcon.vue'
+import type { IconName } from '@/components/TabIcon.vue'
 import { availablePersonas, personaSummary } from '@/services/persona'
 import { relTime } from '@/lib/fmt'
 
@@ -23,22 +25,22 @@ const knowledge = useKnowledge()
 const { providers, load: loadProviders } = useProviders()
 
 /** 三种模式 —— 立场完全不同，这是产品的分水岭 */
-const MODES: { id: AdvisorMode; icon: string; name: string; desc: string }[] = [
+const MODES: { id: AdvisorMode; icon: IconName; name: string; desc: string }[] = [
   {
     id: 'audit',
-    icon: '🔍',
+    icon: 'search',
     name: '检验我的操作',
     desc: '贴出你买了/卖了什么，他坐在对面审你的单子，指出对在哪、错在哪',
   },
   {
     id: 'persona',
-    icon: '🧠',
+    icon: 'person',
     name: '请教军师',
     desc: '拿一个他从没见过的新情况问他，他用框架推演（不荐股、不预测收益）',
   },
   {
     id: 'research',
-    icon: '📚',
+    icon: 'kb',
     name: '研究历史观点',
     desc: '查他过去怎么看某个标的，附事后的真实超额收益与命中与否',
   },
@@ -162,7 +164,7 @@ function kbNames(s: Session): string[] {
     </div>
 
     <div v-if="!sessions.sessions.value.length" class="empty">
-      <div class="big">💬</div>
+      <div class="big"><TabIcon name="sessions" :size="36" /></div>
       还没有会话<br />
       新建一个，问它某只票或某个板块
     </div>
@@ -179,7 +181,8 @@ function kbNames(s: Session): string[] {
           <div class="card-meta">{{ preview(s) }}</div>
           <div class="chips" style="margin-top: 6px">
             <span class="chip" :class="{ on: modeOf(s) !== 'research' }">
-              {{ modeMeta(modeOf(s)).icon }} {{ modeMeta(modeOf(s)).name }}
+              <TabIcon :name="modeMeta(modeOf(s)).icon" :size="13" />
+              {{ modeMeta(modeOf(s)).name }}
             </span>
             <span v-if="s.focusSubject?.name" class="chip">
               聚焦 {{ s.focusSubject.name }}
@@ -187,7 +190,10 @@ function kbNames(s: Session): string[] {
             <span class="chip" :class="{ on: s.useGlobalMemory }">
               {{ s.useGlobalMemory ? '共享记忆' : '隔离记忆' }}
             </span>
-            <span v-for="n in kbNames(s)" :key="n" class="chip">📚 {{ n }}</span>
+            <span v-for="n in kbNames(s)" :key="n" class="chip">
+              <TabIcon name="kb" :size="13" />
+              {{ n }}
+            </span>
             <span v-if="!kbNames(s).length" class="chip">无军师</span>
           </div>
         </div>
@@ -218,7 +224,7 @@ function kbNames(s: Session): string[] {
               @click="pickMode(m.id)"
             >
               <div class="mode-head">
-                <span class="mode-icon">{{ m.icon }}</span>
+                <span class="mode-icon"><TabIcon :name="m.icon" :size="15" /></span>
                 <b>{{ m.name }}</b>
                 <span v-if="m.id === 'audit'" class="chip on" style="margin-left: auto">推荐</span>
               </div>
@@ -242,7 +248,8 @@ function kbNames(s: Session): string[] {
               :class="{ on: pickedPersona?.author.author_uid === p.author.author_uid }"
               @click="draft.personaUid = p.author.author_uid"
             >
-              🎓 {{ p.author.name }}
+              <TabIcon name="person" :size="13" />
+              {{ p.author.name }}
               <span class="muted">({{ personaSummary(p.author.persona) }})</span>
             </span>
           </div>
@@ -288,7 +295,8 @@ function kbNames(s: Session): string[] {
               :class="{ on: draft.kbIds.includes(k.id) }"
               @click="toggleKb(k.id)"
             >
-              📚 {{ k.author?.name || k.manifest.title }}
+              <TabIcon name="kb" :size="13" />
+              {{ k.author?.name || k.manifest.title }}
               <span class="muted">({{ k.opinions.length }})</span>
             </span>
           </div>

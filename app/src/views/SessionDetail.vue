@@ -12,19 +12,21 @@ import { useRoute, useRouter } from 'vue-router'
 import type { AdvisorMode, Session } from '@/types'
 import { useSessions } from '@/stores/sessions'
 import { useKnowledge } from '@/stores/knowledge'
+import TabIcon from '@/components/TabIcon.vue'
+import type { IconName } from '@/components/TabIcon.vue'
 import { useMemory } from '@/stores/memory'
 import { useProviders } from '@/stores/providers'
 import { renderMarkdown } from '@/lib/fmt'
 import { compressImage, fileToDataUrl } from '@/services/llm'
 
-const MODE_META: Record<AdvisorMode, { icon: string; name: string }> = {
-  audit: { icon: '🔍', name: '检验模式' },
-  persona: { icon: '🧠', name: '军师模式' },
-  research: { icon: '📚', name: '研究模式' },
+const MODE_META: Record<AdvisorMode, { icon: IconName; name: string }> = {
+  audit: { icon: 'search', name: '检验模式' },
+  persona: { icon: 'person', name: '军师模式' },
+  research: { icon: 'kb', name: '研究模式' },
 }
 
-function modeIcon(m: AdvisorMode): string {
-  return MODE_META[m]?.icon ?? '📚'
+function modeIcon(m: AdvisorMode): IconName {
+  return MODE_META[m]?.icon ?? 'kb'
 }
 
 function modeName(m: AdvisorMode): string {
@@ -370,7 +372,8 @@ const memoryHint = computed(() => {
             :class="{ on: session.useGlobalMemory }"
             @click="onToggleMemory"
           >
-            🧠 {{ session.useGlobalMemory ? '共享记忆' : '隔离记忆' }}
+            <TabIcon name="memory" :size="14" />
+            {{ session.useGlobalMemory ? '共享记忆' : '隔离记忆' }}
           </span>
           <!-- 联网授权：关着=先问再查；打开=本会话直接查 -->
           <span
@@ -378,10 +381,11 @@ const memoryHint = computed(() => {
             :class="{ on: session.allowOnline }"
             @click="onToggleOnline"
           >
-            🌐 {{ session.allowOnline ? '已允许联网' : '联网前先问我' }}
+            <TabIcon name="globe" :size="14" />
+            {{ session.allowOnline ? '已允许联网' : '联网前先问我' }}
           </span>
           <span class="chip pick" @click="openKbPicker">
-            📚
+            <TabIcon name="kb" :size="14" />
             {{
               activeKbs.length
                 ? activeKbs.map((k) => k.author?.name || k.manifest.title).join('、')
@@ -398,7 +402,7 @@ const memoryHint = computed(() => {
       <!-- 消息 -->
       <div ref="chatEl" class="chat">
         <div v-if="!session.messages.length" class="empty">
-          <div class="big">💬</div>
+          <div class="big"><TabIcon name="sessions" :size="36" /></div>
           问点什么吧<br />
           <span class="small">
             例如：我现在持有半导体，这个军师怎么看？<br />
@@ -475,12 +479,17 @@ const memoryHint = computed(() => {
             <span v-if="m.pending" class="muted">生成中…</span>
             <template v-else>
               <span v-if="m.mode && m.mode !== 'research'" class="chip on">
-                {{ modeIcon(m.mode) }} {{ modeName(m.mode) }}
+                <TabIcon :name="modeIcon(m.mode)" :size="13" />
+                {{ modeName(m.mode) }}
               </span>
               <span v-if="m.usedKb?.length">
-                📚 {{ m.usedKb.map((k) => k.author || k.title).join('、') }}
+                <TabIcon name="kb" :size="12" />
+                {{ m.usedKb.map((k) => k.author || k.title).join('、') }}
               </span>
-              <span>{{ m.usedMemory ? '🧠 用了记忆' : '🧠 未用记忆' }}</span>
+              <span>
+                <TabIcon name="memory" :size="12" />
+                {{ m.usedMemory ? '用了记忆' : '未用记忆' }}
+              </span>
               <span v-if="m.model" class="muted">{{ m.model }}</span>
               <span v-if="m.usage" class="muted">
                 {{ m.usage.prompt }}+{{ m.usage.completion }} tok
@@ -517,7 +526,9 @@ const memoryHint = computed(() => {
             style="display: none"
             @change="onAttach"
           />
-          <div class="attach" @click="fileInput?.click()">📎</div>
+          <div class="attach" @click="fileInput?.click()">
+            <TabIcon name="paperclip" :size="20" />
+          </div>
           <textarea
             ref="taEl"
             v-model="input"
@@ -558,7 +569,8 @@ const memoryHint = computed(() => {
             :style="{ opacity: k.enabled ? 1 : 0.5 }"
             @click="toggleKbDraft(k.id)"
           >
-            📚 {{ k.author?.name || k.manifest.title }}
+            <TabIcon name="kb" :size="14" />
+            {{ k.author?.name || k.manifest.title }}
             <span class="muted">({{ k.opinions.length }} 条观点)</span>
           </span>
         </div>

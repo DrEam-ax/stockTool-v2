@@ -18,6 +18,7 @@ import {
   type ParsedHolding,
 } from '@/services/memory'
 import { compressImage, fileToDataUrl } from '@/services/llm'
+import TabIcon from '@/components/TabIcon.vue'
 import { fmtMoney, fmtSignedPct } from '@/lib/fmt'
 import { describeDca, isDcaActive, monthlyDcaAmount, DCA_PERIODS } from '@/lib/dca'
 import type { DcaPlan } from '@/lib/dca'
@@ -414,7 +415,8 @@ const kindLabel: Record<string, string> = {
             </span>
           </div>
           <div v-if="isDcaActive(h.dca)" class="card-meta dca-line">
-            🔁 定投 {{ describeDca(h.dca) }}
+            <TabIcon name="repeat" :size="12" />
+            定投 {{ describeDca(h.dca) }}
           </div>
         </div>
       </div>
