@@ -51,7 +51,7 @@ const VAR_MAP: Record<string, string> = {
 export const THEMES: ThemeDef[] = [
   {
     key: 'dark',
-    label: '深空蓝',
+    label: '暗夜黑',
     swatch: '#4f8cff',
     scheme: 'dark',
     v: {
@@ -96,7 +96,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     key: 'orange',
-    label: '暖橙',
+    label: '暖日橙',
     swatch: '#e8794f',
     scheme: 'light',
     v: {
