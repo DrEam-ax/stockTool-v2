@@ -635,4 +635,71 @@ describe('会话详情：能打字就必须能发送', () => {
 
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('打了一半的句子')
   })
+
+  /**
+   * 微信式输入框：内容达到 3 行及以上（scrollHeight ≥ 88）时，
+   * 左上角出现展开按钮；点击进入全屏编辑，再点收起回普通高度。
+   * 全屏层用 <Teleport to="body">，断言走 document。
+   */
+  describe('微信式输入框：≥3 行出现展开按钮，可切全屏编辑', () => {
+    it('不足 3 行（scrollHeight < 88）不显示展开按钮', async () => {
+      const w = await mountSession()
+      const ta = w.find('textarea')
+      stubScrollHeight(ta.element as HTMLTextAreaElement, 70) // 2 行
+      await ta.setValue('两行以内')
+      await ta.trigger('input')
+      await nextTick()
+      await flushPromises()
+      expect(w.find('.expand-btn').exists()).toBe(false)
+    })
+
+    it('达到 3 行（scrollHeight ≥ 88）左上角出现展开按钮', async () => {
+      const w = await mountSession()
+      const ta = w.find('textarea')
+      const el = ta.element as HTMLTextAreaElement
+      stubScrollHeight(el, 88) // 恰好 3 行
+      await ta.setValue('三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十')
+      await ta.trigger('input')
+      await nextTick()
+      await flushPromises()
+      expect(w.find('.expand-btn').exists()).toBe(true)
+    })
+
+    it('点击展开按钮进全屏，内容同步；再点收起恢复且内容保留', async () => {
+      const w = await mountSession()
+      const ta = w.find('textarea')
+      const el = ta.element as HTMLTextAreaElement
+      stubScrollHeight(el, 110) // 超过 3 行
+      await ta.setValue('第一段很长很长需要折行的内容')
+      await ta.trigger('input')
+      await nextTick()
+      await flushPromises()
+
+      // 进入全屏
+      await w.find('.expand-btn').trigger('click')
+      await nextTick()
+      await flushPromises()
+      const fs = document.querySelector('.composer-fs')
+      expect(fs).toBeTruthy()
+      const fsTa = fs!.querySelector('textarea') as HTMLTextAreaElement
+      // 全屏输入框带着折叠框里的内容
+      expect(fsTa.value).toBe('第一段很长很长需要折行的内容')
+
+      // 全屏里补内容（组合态式 DOM 直写 + input 事件）
+      fsTa.value = '全屏里补一句'
+      fsTa.dispatchEvent(new Event('input'))
+      await nextTick()
+      await flushPromises()
+
+      // 收起回普通输入框
+      const fsBtn = document.querySelector('.fs-btn') as HTMLElement
+      expect(fsBtn).toBeTruthy()
+      fsBtn.click()
+      await nextTick()
+      await flushPromises()
+      expect(document.querySelector('.composer-fs')).toBeNull()
+      // 折叠输入框带着全屏里补的内容（同一 input 状态）
+      expect(el.value).toBe('全屏里补一句')
+    })
+  })
 })

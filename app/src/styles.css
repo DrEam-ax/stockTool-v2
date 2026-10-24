@@ -880,8 +880,100 @@ textarea {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  padding: 0 2px;
   margin-bottom: 6px;
   align-items: center;
+}
+
+/* 微信式输入框：内容 ≥3 行时左上角展开按钮 */
+.ta-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.ta-wrap textarea {
+  width: 100%;
+}
+
+.ta-wrap.has-btn textarea {
+  padding-left: 34px; /* 给左上角按钮让位 */
+}
+
+.expand-btn {
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+/* 全屏输入框（微信式展开态） */
+.composer-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-t);
+}
+
+.fs-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.fs-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.fs-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-ta {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 10px 14px calc(10px + var(--safe-b));
+  resize: none;
 }
 
 .attach {

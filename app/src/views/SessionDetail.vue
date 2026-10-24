@@ -52,6 +52,43 @@ const showKbPicker = ref(false)
 const kbDraft = ref<string[]>([])
 const error = ref('')
 
+/**
+ * 微信式输入框：内容达到 3 行及以上时，左上角出现小按钮，
+ * 点击进入全屏编辑；全屏时左上角按钮点击收起回普通高度。
+ */
+const composerFs = ref(false)
+const showExpandBtn = ref(false)
+const fsEl = ref<HTMLTextAreaElement | null>(null)
+// 3 行阈值：单行 = 15px × 1.55 行高 = 23.25px，3 行内容 = 69.75px，
+// 加上下 padding 18px → scrollHeight ≥ 88 即表示内容已到 3 行
+const EXPAND_THRESHOLD = 88
+
+function updateExpandBtn() {
+  const el = taEl.value
+  if (!el || composerFs.value) return
+  showExpandBtn.value = el.scrollHeight >= EXPAND_THRESHOLD
+}
+
+function openComposerFs() {
+  composerFs.value = true
+  // 等全屏层挂好再聚焦，输入法会直接顶起
+  nextTick(() => fsEl.value?.focus())
+}
+
+function closeComposerFs() {
+  composerFs.value = false
+  nextTick(() => {
+    taEl.value?.focus()
+    updateExpandBtn()
+  })
+}
+
+/** 全屏输入框：组合态下 v-model 可能没同步，DOM 兜底拉回（与折叠框同一策略） */
+function onFsInput() {
+  const el = fsEl.value
+  if (el && el.value !== input.value) input.value = el.value
+}
+
 const streaming = computed(() => sessions.streamingId.value === sessionId.value)
 const noProvider = computed(() => providers.value.length === 0)
 const openDetails = ref(new Set<string>())
@@ -91,6 +128,10 @@ watch(
 watch(input, async () => {
   await nextTick()
   resizeComposer()
+  // 行数变化影响「≥3 行显示展开按钮」；field-sizing 下重排有延迟，
+  // 等一帧再算一次（与 onComposerInput 的兜底同思路）
+  updateExpandBtn()
+  requestAnimationFrame(updateExpandBtn)
 })
 watch(
   () => session.value?.messages[session.value.messages.length - 1]?.content,
@@ -137,11 +178,14 @@ function onComposerInput() {
   const el = taEl.value
   if (el && el.value !== input.value) input.value = el.value
   resizeComposer()
+  updateExpandBtn()
   // 组合态下的补算：等浏览器重排完成。两层兜底 ——
   //   rAF：正常情况下重排后的第一帧
   //   setTimeout(0)：某些 WebView 的组合态结束后还会晚一拍才更新 scrollHeight
   requestAnimationFrame(resizeComposer)
+  requestAnimationFrame(updateExpandBtn)
   setTimeout(resizeComposer, 0)
+  setTimeout(updateExpandBtn, 0)
 }
 
 /** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
@@ -529,16 +573,36 @@ const memoryHint = computed(() => {
           <div class="attach" @click="fileInput?.click()">
             <TabIcon name="paperclip" :size="20" />
           </div>
-          <textarea
-            ref="taEl"
-            v-model="input"
-            rows="1"
-            @keydown="onKeydown"
-            @input="onComposerInput"
-            @compositionend="onComposerInput"
-            @focus="startComposerWatch"
-            @blur="onComposerBlur"
-          />
+          <div class="ta-wrap" :class="{ 'has-btn': showExpandBtn }">
+            <!-- 内容 ≥3 行时出现的微信式展开按钮：点击进全屏编辑 -->
+            <button
+              v-if="showExpandBtn"
+              class="expand-btn"
+              aria-label="展开输入框"
+              @click="openComposerFs"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path
+                  d="M6 9l6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <textarea
+              ref="taEl"
+              v-model="input"
+              rows="1"
+              @keydown="onKeydown"
+              @input="onComposerInput"
+              @compositionend="onComposerInput"
+              @focus="startComposerWatch"
+              @blur="onComposerBlur"
+            />
+          </div>
           <button v-if="streaming" class="btn danger" style="height: 38px" @click="sessions.abort()">
             停止
           </button>
@@ -551,6 +615,37 @@ const memoryHint = computed(() => {
         </div>
       </div>
     </template>
+
+    <!-- 微信式全屏输入框：折叠态内容 ≥3 行时点左上角按钮进入 -->
+    <Teleport to="body">
+      <div v-if="composerFs" class="composer-fs">
+        <div class="fs-head">
+          <button class="fs-btn" aria-label="收起输入框" @click="closeComposerFs">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <span class="fs-title">{{ session?.title }}</span>
+          <button v-if="streaming" class="btn danger sm" @click="sessions.abort()">停止</button>
+          <button v-else class="btn primary sm" @click="onSend">发送</button>
+        </div>
+        <textarea
+          ref="fsEl"
+          v-model="input"
+          class="fs-ta"
+          @keydown="onKeydown"
+          @input="onFsInput"
+          @compositionend="onFsInput"
+        ></textarea>
+      </div>
+    </Teleport>
 
     <!-- 军师选择 -->
     <div v-if="showKbPicker" class="modal-mask" @click.self="showKbPicker = false">
