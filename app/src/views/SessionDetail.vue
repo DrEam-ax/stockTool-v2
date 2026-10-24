@@ -533,7 +533,6 @@ const memoryHint = computed(() => {
             ref="taEl"
             v-model="input"
             rows="1"
-            placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"
             @keydown="onKeydown"
             @input="onComposerInput"
             @compositionend="onComposerInput"
