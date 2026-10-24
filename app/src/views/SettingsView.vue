@@ -16,6 +16,7 @@ import { describeAvailability, type ToolContext } from '@/services/tools'
 import { estimateUsage } from '@/lib/db'
 import { fmtBytes } from '@/lib/fmt'
 import { runtime } from '@/lib/http'
+import { THEMES, applyTheme, currentThemeKey } from '@/lib/themes'
 import { APP_VERSION, APP_VERSION_CODE, APP_BUILD_DATE } from '@/version'
 
 /** 用户排查问题时最需要知道的两件事：装的是哪一版、跑在什么环境 */
@@ -43,6 +44,12 @@ const loadingModels = ref(false)
 const saving = ref(false)
 const storage = ref<{ usage: number; quota: number } | null>(null)
 const showKey = ref(false)
+const currentTheme = ref(currentThemeKey())
+
+function setTheme(key: (typeof THEMES)[number]['key']) {
+  currentTheme.value = key
+  applyTheme(key)
+}
 
 /**
  * API Key 输入框**不走 v-model**，改为「DOM 持有显示值 + input 事件同步到 state」。
@@ -324,6 +331,25 @@ async function onDelete(p: ModelProvider) {
         <div style="text-align: right">
           <div class="muted small">{{ runtimeLabel }}</div>
         </div>
+      </div>
+    </div>
+
+    <div class="section-title">外观</div>
+    <div class="card">
+      <div class="theme-grid">
+        <button
+          v-for="t in THEMES"
+          :key="t.key"
+          class="theme-cell"
+          :class="{ on: currentTheme === t.key }"
+          @click="setTheme(t.key)"
+        >
+          <span class="theme-swatch" :style="{ background: t.swatch }" />
+          <span class="theme-name">{{ t.label }}</span>
+        </button>
+      </div>
+      <div class="hint" style="margin-top: 10px">
+        切换即时生效，并记住你的选择。颜色只影响外观，不影响数据。
       </div>
     </div>
 

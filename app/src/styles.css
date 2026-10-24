@@ -14,6 +14,22 @@
   --fg-mute: #6b7488;
   --accent: #4f8cff;
   --accent-dim: #2a4a86;
+  /* 主题化新增的语义变量（默认=深空蓝主题的值，主题切换时被 themes.ts 覆盖） */
+  --accent-press: #3d78e0; /* 主色按钮按下态 */
+  --on-accent: #ffffff; /* 主色底上的文字（按钮/选中 chip/FAB） */
+  --tabbar-bg: rgba(18, 21, 28, 0.96); /* 底栏背景 */
+  --user-border: #34527f; /* 用户气泡边框 */
+  --err-border: #5a2b2b; /* 错误态边框（错误气泡/工具行） */
+  --err-bg: #241a1c; /* 错误态背景 */
+  --danger-border: #40262a; /* 危险按钮边框 */
+  --strong: #ffffff; /* 气泡内强调文字 */
+  --warn-fg: #f0c684; /* alert.warn 文字 */
+  --err-fg: #f0a09a; /* alert.err 文字 */
+  --info-fg: #a8c4f5; /* alert.info 文字 */
+  --ok-fg: #86d9b3; /* alert.ok 文字 */
+  /* 通用色（所有主题一致，不放进主题表） */
+  --knob: #ffffff; /* 开关滑块 */
+  --mask: rgba(0, 0, 0, 0.62); /* 弹窗遮罩 */
   --up: #f2555a;
   --down: #23a06a;
   --warn: #e8a33d;
@@ -230,12 +246,12 @@ a {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 500;
 }
 
 .btn.primary:active {
-  background: #3d78e0;
+  background: var(--accent-press);
 }
 
 .btn.ghost {
@@ -244,7 +260,7 @@ a {
 
 .btn.danger {
   color: var(--danger);
-  border-color: #40262a;
+  border-color: var(--danger-border);
 }
 
 .btn.sm {
@@ -271,7 +287,7 @@ a {
   height: 52px;
   border-radius: 26px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: none;
   font-size: 26px;
   line-height: 1;
@@ -457,7 +473,7 @@ textarea {
 .chip.on {
   background: var(--accent-dim);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .chip.pick {
@@ -492,7 +508,7 @@ textarea {
 
 .badge.info {
   background: var(--accent-dim);
-  color: #cfe0ff;
+  color: var(--fg);
 }
 
 /* ---------- 底栏 ---------- */
@@ -504,7 +520,7 @@ textarea {
   height: calc(var(--tabbar-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
   display: flex;
-  background: rgba(18, 21, 28, 0.96);
+  background: var(--tabbar-bg);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
   z-index: 40;
@@ -540,6 +556,45 @@ textarea {
   background: var(--accent);
 }
 
+/* ---------- 主题选择 ---------- */
+.theme-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.theme-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.theme-cell.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.theme-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+}
+
+.theme-cell.on .theme-swatch {
+  border-color: var(--accent);
+}
+
 /* ---------- 聊天 ---------- */
 .chat {
   flex: 1;
@@ -568,7 +623,7 @@ textarea {
 
 .msg.user .bubble {
   background: var(--accent-dim);
-  border: 1px solid #34527f;
+  border: 1px solid var(--user-border);
 }
 
 .msg.assistant .bubble {
@@ -578,8 +633,8 @@ textarea {
 }
 
 .msg.assistant .bubble.error {
-  border-color: #5a2b2b;
-  background: #241a1c;
+  border-color: var(--err-border);
+  background: var(--err-bg);
 }
 
 .bubble p {
@@ -608,7 +663,7 @@ textarea {
 }
 
 .bubble strong {
-  color: #fff;
+  color: var(--strong);
 }
 
 .md-gap {
@@ -651,8 +706,8 @@ textarea {
   overflow-wrap: anywhere;}
 
 .tool-row.err {
-  border-color: #4a2b2b;
-  background: #1f1719;
+  border-color: var(--err-border);
+  background: var(--err-bg);
 }
 
 .tc-ico {
@@ -905,25 +960,25 @@ textarea {
 .alert.warn {
   background: rgba(232, 163, 61, 0.1);
   border: 1px solid rgba(232, 163, 61, 0.3);
-  color: #f0c684;
+  color: var(--warn-fg);
 }
 
 .alert.err {
   background: rgba(229, 83, 75, 0.1);
   border: 1px solid rgba(229, 83, 75, 0.32);
-  color: #f0a09a;
+  color: var(--err-fg);
 }
 
 .alert.info {
   background: rgba(79, 140, 255, 0.08);
   border: 1px solid rgba(79, 140, 255, 0.28);
-  color: #a8c4f5;
+  color: var(--info-fg);
 }
 
 .alert.ok {
   background: rgba(35, 160, 106, 0.1);
   border: 1px solid rgba(35, 160, 106, 0.3);
-  color: #86d9b3;
+  color: var(--ok-fg);
 }
 
 .switch {
@@ -951,7 +1006,7 @@ textarea {
   width: 20px;
   height: 20px;
   border-radius: 10px;
-  background: #fff;
+  background: var(--knob);
   transition: transform 0.15s;
 }
 
@@ -978,7 +1033,7 @@ textarea {
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--mask);
   z-index: 60;
   display: flex;
   align-items: flex-end;
