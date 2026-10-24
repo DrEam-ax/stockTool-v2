@@ -595,6 +595,64 @@ textarea {
   border-color: var(--accent);
 }
 
+/* ---------- 设置页可折叠分区 ---------- */
+.sec {
+  margin-bottom: 6px;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.sec-head .sec-sum {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-arrow {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-dim);
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.sec.open .sec-arrow {
+  transform: rotate(90deg);
+}
+
+.sec-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.sec.open .sec-body {
+  grid-template-rows: 1fr;
+}
+
+.sec-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* ---------- 聊天 ---------- */
 .chat {
   flex: 1;

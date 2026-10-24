@@ -46,6 +46,20 @@ const storage = ref<{ usage: number; quota: number } | null>(null)
 const showKey = ref(false)
 const currentTheme = ref(currentThemeKey())
 
+/**
+ * 设置页分区折叠：默认全部收起（分区太多显得冗长），点标题展开。
+ * 收起时标题行右侧显示摘要，展开后是正常内容。
+ */
+const openSections = ref<Record<string, boolean>>({})
+
+function toggleSection(key: string) {
+  openSections.value[key] = !openSections.value[key]
+}
+
+const currentThemeName = computed(
+  () => THEMES.find((t) => t.key === currentTheme.value)?.label ?? '',
+)
+
 function setTheme(key: (typeof THEMES)[number]['key']) {
   currentTheme.value = key
   applyTheme(key)
@@ -334,223 +348,271 @@ async function onDelete(p: ModelProvider) {
       </div>
     </div>
 
-    <div class="section-title">外观</div>
-    <div class="card">
-      <div class="theme-grid">
-        <button
-          v-for="t in THEMES"
-          :key="t.key"
-          class="theme-cell"
-          :class="{ on: currentTheme === t.key }"
-          @click="setTheme(t.key)"
-        >
-          <span class="theme-swatch" :style="{ background: t.swatch }" />
-          <span class="theme-name">{{ t.label }}</span>
-        </button>
-      </div>
-      <div class="hint" style="margin-top: 10px">
-        切换即时生效，并记住你的选择。颜色只影响外观，不影响数据。
-      </div>
-    </div>
-
-    <div class="section-title">模型</div>
-
-    <div v-if="!providers.length" class="alert info">
-      还没有配置模型。这个 App <b>不内置模型</b>——你填自己的 API Key 和
-      Base URL，请求直接从本机发往你选的服务，我们不中转、不保存。
-    </div>
-
-    <div v-for="p in providers" :key="p.id" class="card">
-      <div class="card-row">
-        <div style="flex: 1; min-width: 0">
-          <div class="card-title">
-            {{ p.name }}
-            <span v-if="p.isDefault" class="badge info">默认</span>
-            <span v-if="p.supportsVision" class="badge">识图</span>
-          </div>
-          <div class="card-meta mono" style="overflow: hidden; text-overflow: ellipsis">
-            {{ p.model }} · {{ p.baseUrl }}
-          </div>
-          <div v-if="p.lastCheckedAt" class="card-meta">
-            <span :style="{ color: p.lastCheckOk ? 'var(--down)' : 'var(--danger)' }">
-              {{ p.lastCheckOk ? '✓ 连接正常' : '✕ 连接失败' }}
-            </span>
-            <span class="muted"> · {{ p.lastCheckMessage?.slice(0, 60) }}</span>
+    <div class="sec" :class="{ open: openSections.theme }">
+      <button class="sec-head" @click="toggleSection('theme')">
+        <span>外观</span>
+        <span class="sec-sum">{{ currentThemeName }}</span>
+        <span class="sec-arrow">▸</span>
+      </button>
+      <div class="sec-body">
+        <div class="sec-inner">
+          <div class="card">
+            <div class="theme-grid">
+              <button
+                v-for="t in THEMES"
+                :key="t.key"
+                class="theme-cell"
+                :class="{ on: currentTheme === t.key }"
+                @click="setTheme(t.key)"
+              >
+                <span class="theme-swatch" :style="{ background: t.swatch }" />
+                <span class="theme-name">{{ t.label }}</span>
+              </button>
+            </div>
+            <div class="hint" style="margin-top: 10px">
+              切换即时生效，并记住你的选择。颜色只影响外观，不影响数据。
+            </div>
           </div>
         </div>
       </div>
-      <div class="btn-row" style="margin-top: 8px">
-        <button class="btn sm" @click="openEdit(p)">编辑</button>
-        <button class="btn sm danger" @click="onDelete(p)">删除</button>
-      </div>
     </div>
 
-    <button class="btn primary" style="width: 100%; margin-top: 6px" @click="openNew">
-      + 添加模型
-    </button>
-
-    <div class="section-title">工具（AI 可自行调用）</div>
-
-    <div class="alert info">
-      开启后，AI 会在需要时<b>自己决定</b>调用哪些工具，而不是凭训练数据回答。
-      每次调用了什么、查到了几条，都会显示在对话里——这是你判断答案可信度的依据。<br />
-      模型编造时的典型特征就是：一个工具都没调。
-    </div>
-
-    <div class="card">
-      <label class="check">
-        <input v-model="toolConfig.kb.enabled" type="checkbox" />
-        <span>
-          <b>知识库检索</b>
-          <div class="hint">
-            检索已载入知识库里的历史观点，并带上每条观点事后的真实收益。
-            完全本地，总是可用。
+    <div class="sec" :class="{ open: openSections.model }">
+      <button class="sec-head" @click="toggleSection('model')">
+        <span>模型</span>
+        <span class="sec-sum">{{ providers.length ? `${providers.length} 个模型` : '未配置' }}</span>
+        <span class="sec-arrow">▸</span>
+      </button>
+      <div class="sec-body">
+        <div class="sec-inner">
+          <div v-if="!providers.length" class="alert info">
+            还没有配置模型。这个 App <b>不内置模型</b>——你填自己的 API Key 和
+            Base URL，请求直接从本机发往你选的服务，我们不中转、不保存。
           </div>
-        </span>
-      </label>
-    </div>
 
-    <div class="card">
-      <label class="check">
-        <input v-model="toolConfig.market.enabled" type="checkbox" />
-        <span>
-          <b>行情与基金持仓</b>
-          <div class="hint">
-            查实时股价、涨跌幅、成交额；查基金前十大重仓股。
-            数据源为腾讯财经与天天基金，无需 key。
+          <div v-for="p in providers" :key="p.id" class="card">
+            <div class="card-row">
+              <div style="flex: 1; min-width: 0">
+                <div class="card-title">
+                  {{ p.name }}
+                  <span v-if="p.isDefault" class="badge info">默认</span>
+                  <span v-if="p.supportsVision" class="badge">识图</span>
+                </div>
+                <div class="card-meta mono" style="overflow: hidden; text-overflow: ellipsis">
+                  {{ p.model }} · {{ p.baseUrl }}
+                </div>
+                <div v-if="p.lastCheckedAt" class="card-meta">
+                  <span :style="{ color: p.lastCheckOk ? 'var(--down)' : 'var(--danger)' }">
+                    {{ p.lastCheckOk ? '✓ 连接正常' : '✕ 连接失败' }}
+                  </span>
+                  <span class="muted"> · {{ p.lastCheckMessage?.slice(0, 60) }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="btn-row" style="margin-top: 8px">
+              <button class="btn sm" @click="openEdit(p)">编辑</button>
+              <button class="btn sm danger" @click="onDelete(p)">删除</button>
+            </div>
           </div>
-        </span>
-      </label>
-      <div v-if="toolConfig.market.enabled" class="field" style="margin: 10px 0 0">
-        <label>数据源</label>
-        <select v-model="toolConfig.market.source">
-          <option value="tencent">腾讯财经</option>
-          <option value="eastmoney">东方财富</option>
-        </select>
+
+          <button class="btn primary" style="width: 100%; margin-top: 6px" @click="openNew">
+            + 添加模型
+          </button>
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <label class="check">
-        <input v-model="toolConfig.webSearch.enabled" type="checkbox" />
-        <span>
-          <b>联网搜索与读取网页</b>
-          <div class="hint">
-            查最新新闻、政策、公告。需要你自己的搜索 API key——
-            App 不内置搜索服务，也不代管 key。
+    <div class="sec" :class="{ open: openSections.tools }">
+      <button class="sec-head" @click="toggleSection('tools')">
+        <span>工具（AI 可自行调用）</span>
+        <span class="sec-sum">已启用 {{ toolCount }} 类</span>
+        <span class="sec-arrow">▸</span>
+      </button>
+      <div class="sec-body">
+        <div class="sec-inner">
+          <div class="alert info">
+            开启后，AI 会在需要时<b>自己决定</b>调用哪些工具，而不是凭训练数据回答。
+            每次调用了什么、查到了几条，都会显示在对话里——这是你判断答案可信度的依据。<br />
+            模型编造时的典型特征就是：一个工具都没调。
           </div>
-        </span>
-      </label>
 
-      <template v-if="toolConfig.webSearch.enabled">
-        <div class="field" style="margin-top: 10px">
-          <label>搜索服务商</label>
-          <select v-model="toolConfig.webSearch.provider">
-            <option v-for="p in SEARCH_PROVIDERS" :key="p.value" :value="p.value">
-              {{ p.label }}
-            </option>
-          </select>
-          <div class="hint">
-            {{ SEARCH_PROVIDERS.find((x) => x.value === toolConfig.webSearch.provider)?.hint }}
+          <div class="card">
+            <label class="check">
+              <input v-model="toolConfig.kb.enabled" type="checkbox" />
+              <span>
+                <b>知识库检索</b>
+                <div class="hint">
+                  检索已载入知识库里的历史观点，并带上每条观点事后的真实收益。
+                  完全本地，总是可用。
+                </div>
+              </span>
+            </label>
+          </div>
+
+          <div class="card">
+            <label class="check">
+              <input v-model="toolConfig.market.enabled" type="checkbox" />
+              <span>
+                <b>行情与基金持仓</b>
+                <div class="hint">
+                  查实时股价、涨跌幅、成交额；查基金前十大重仓股。
+                  数据源为腾讯财经与天天基金，无需 key。
+                </div>
+              </span>
+            </label>
+            <div v-if="toolConfig.market.enabled" class="field" style="margin: 10px 0 0">
+              <label>数据源</label>
+              <select v-model="toolConfig.market.source">
+                <option value="tencent">腾讯财经</option>
+                <option value="eastmoney">东方财富</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card">
+            <label class="check">
+              <input v-model="toolConfig.webSearch.enabled" type="checkbox" />
+              <span>
+                <b>联网搜索与读取网页</b>
+                <div class="hint">
+                  查最新新闻、政策、公告。需要你自己的搜索 API key——
+                  App 不内置搜索服务，也不代管 key。
+                </div>
+              </span>
+            </label>
+
+            <template v-if="toolConfig.webSearch.enabled">
+              <div class="field" style="margin-top: 10px">
+                <label>搜索服务商</label>
+                <select v-model="toolConfig.webSearch.provider">
+                  <option v-for="p in SEARCH_PROVIDERS" :key="p.value" :value="p.value">
+                    {{ p.label }}
+                  </option>
+                </select>
+                <div class="hint">
+                  {{ SEARCH_PROVIDERS.find((x) => x.value === toolConfig.webSearch.provider)?.hint }}
+                </div>
+              </div>
+
+              <div v-if="toolConfig.webSearch.provider === 'custom'" class="field">
+                <label>自建代理地址</label>
+                <input v-model="toolConfig.webSearch.baseUrl" type="url" placeholder="https://your-proxy/search" />
+              </div>
+
+              <!-- 只有付费 provider 才需要 Key；builtin 免密。
+                   与模型 Key 同理：不绑 value，避免重渲染时被回写成空。 -->
+              <div
+                v-if="['tavily', 'brave', 'serper', 'custom'].includes(toolConfig.webSearch.provider)"
+                class="field"
+              >
+                <label>API Key</label>
+                <input
+                  ref="webKeyInput"
+                  type="text"
+                  class="key-masked"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  @input="onWebKeyInput"
+                />
+              </div>
+
+              <div class="field">
+                <label>默认返回条数</label>
+                <input v-model.number="toolConfig.webSearch.maxResults" type="number" min="1" max="20" />
+              </div>
+
+              <div v-if="toolConfig.webSearch.provider === 'builtin'" class="alert info">
+                内置源**不需要配置**，现在就能用。它依次尝试：
+                东方财富财经新闻搜索 → 必应中国。<br />
+                两者都失败时会如实报错，不会编造结果。<br />
+                若你重度使用、想要更全的结果，可在上面换成 Tavily / Serper。
+              </div>
+
+              <div v-if="!webSearchReady" class="alert warn">
+                搜索未就绪：{{ toolConfig.webSearch.provider === 'none' ? '已选择不使用搜索' : '还没填 Key' }}
+                <div class="hint" style="margin-top: 4px">
+                  注意：读网页（fetch_page）和查公告（stock_announcements）**不依赖搜索服务商**，
+                  它们仍然可用。
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="card">
+            <div class="field" style="margin: 0">
+              <label>单次回答最多调用几轮工具</label>
+              <input v-model.number="toolConfig.maxRounds" type="number" min="1" max="12" />
+              <div class="hint">
+                防止模型反复调用工具烧 token。默认 6 轮；达到上限会被强制收尾并提示。
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+    </div>
 
-        <div v-if="toolConfig.webSearch.provider === 'custom'" class="field">
-          <label>自建代理地址</label>
-          <input v-model="toolConfig.webSearch.baseUrl" type="url" placeholder="https://your-proxy/search" />
-        </div>
-
-        <!-- 只有付费 provider 才需要 Key；builtin 免密。
-             与模型 Key 同理：不绑 value，避免重渲染时被回写成空。 -->
-        <div
-          v-if="['tavily', 'brave', 'serper', 'custom'].includes(toolConfig.webSearch.provider)"
-          class="field"
-        >
-          <label>API Key</label>
-          <input
-            ref="webKeyInput"
-            type="text"
-            class="key-masked"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            @input="onWebKeyInput"
-          />
-        </div>
-
-        <div class="field">
-          <label>默认返回条数</label>
-          <input v-model.number="toolConfig.webSearch.maxResults" type="number" min="1" max="20" />
-        </div>
-
-        <div v-if="toolConfig.webSearch.provider === 'builtin'" class="alert info">
-          内置源**不需要配置**，现在就能用。它依次尝试：
-          东方财富财经新闻搜索 → 必应中国。<br />
-          两者都失败时会如实报错，不会编造结果。<br />
-          若你重度使用、想要更全的结果，可在上面换成 Tavily / Serper。
-        </div>
-
-        <div v-if="!webSearchReady" class="alert warn">
-          搜索未就绪：{{ toolConfig.webSearch.provider === 'none' ? '已选择不使用搜索' : '还没填 Key' }}
-          <div class="hint" style="margin-top: 4px">
-            注意：读网页（fetch_page）和查公告（stock_announcements）**不依赖搜索服务商**，
-            它们仍然可用。
+    <div class="sec" :class="{ open: openSections.toolStatus }">
+      <button class="sec-head" @click="toggleSection('toolStatus')">
+        <span>工具当前状态</span>
+        <span class="sec-sum">{{ availability.every((t) => t.ok) ? '全部可用' : '有异常' }}</span>
+        <span class="sec-arrow">▸</span>
+      </button>
+      <div class="sec-body">
+        <div class="sec-inner">
+          <div class="card">
+            <div v-for="t in availability" :key="t.name" class="spread" style="padding: 3px 0">
+              <span class="small">
+                <span :style="{ color: t.ok ? 'var(--down)' : 'var(--fg-mute)' }">
+                  {{ t.ok ? '●' : '○' }}
+                </span>
+                {{ t.title }}
+              </span>
+              <span class="small muted" style="text-align: right; max-width: 60%">
+                {{ t.ok ? '可用' : t.reason }}
+              </span>
+            </div>
+            <div class="card-meta" style="margin-top: 8px">
+              已启用 {{ toolCount }} 类工具
+              <template v-if="knowledge.enabledKbs.value.length === 0">
+                · 知识库为空，AI 只能靠常识回答
+              </template>
+            </div>
           </div>
         </div>
-      </template>
-    </div>
-
-    <div class="card">
-      <div class="field" style="margin: 0">
-        <label>单次回答最多调用几轮工具</label>
-        <input v-model.number="toolConfig.maxRounds" type="number" min="1" max="12" />
-        <div class="hint">
-          防止模型反复调用工具烧 token。默认 6 轮；达到上限会被强制收尾并提示。
-        </div>
       </div>
     </div>
 
-    <div class="section-title">工具当前状态</div>
-    <div class="card">
-      <div v-for="t in availability" :key="t.name" class="spread" style="padding: 3px 0">
-        <span class="small">
-          <span :style="{ color: t.ok ? 'var(--down)' : 'var(--fg-mute)' }">
-            {{ t.ok ? '●' : '○' }}
-          </span>
-          {{ t.title }}
-        </span>
-        <span class="small muted" style="text-align: right; max-width: 60%">
-          {{ t.ok ? '可用' : t.reason }}
-        </span>
-      </div>
-      <div class="card-meta" style="margin-top: 8px">
-        已启用 {{ toolCount }} 类工具
-        <template v-if="knowledge.enabledKbs.value.length === 0">
-          · 知识库为空，AI 只能靠常识回答
-        </template>
-      </div>
-    </div>
-
-    <div class="section-title">本机数据</div>
-    <div class="card">
-      <div class="grid3">
-        <div class="stat">
-          <div class="k">知识库</div>
-          <div class="v">{{ knowledge.kbs.value.length }}</div>
+    <div class="sec" :class="{ open: openSections.data }">
+      <button class="sec-head" @click="toggleSection('data')">
+        <span>本机数据</span>
+        <span class="sec-sum">占用 {{ fmtBytes(storage?.usage) }}</span>
+        <span class="sec-arrow">▸</span>
+      </button>
+      <div class="sec-body">
+        <div class="sec-inner">
+          <div class="card">
+            <div class="grid3">
+              <div class="stat">
+                <div class="k">知识库</div>
+                <div class="v">{{ knowledge.kbs.value.length }}</div>
+              </div>
+              <div class="stat">
+                <div class="k">观点</div>
+                <div class="v">{{ knowledge.totalOpinions.value }}</div>
+              </div>
+              <div class="stat">
+                <div class="k">占用</div>
+                <div class="v">{{ fmtBytes(storage?.usage) }}</div>
+              </div>
+            </div>
+            <div class="card-meta" style="margin-top: 8px">
+              已启用 {{ enabledKb.length }} 个知识库；持仓
+              {{ memory.confirmedHoldings.value.length }} 只
+            </div>
+          </div>
         </div>
-        <div class="stat">
-          <div class="k">观点</div>
-          <div class="v">{{ knowledge.totalOpinions.value }}</div>
-        </div>
-        <div class="stat">
-          <div class="k">占用</div>
-          <div class="v">{{ fmtBytes(storage?.usage) }}</div>
-        </div>
-      </div>
-      <div class="card-meta" style="margin-top: 8px">
-        已启用 {{ enabledKb.length }} 个知识库；持仓
-        {{ memory.confirmedHoldings.value.length }} 只
       </div>
     </div>
 
