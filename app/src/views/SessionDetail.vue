@@ -192,16 +192,20 @@ function onComposerInput() {
 const COMPOSER_MAX_H = 130
 
 /**
- * 输入框随内容变高，并保证最后一行始终可见。
+ * 输入框随内容变高，并保证光标行留在可视区内。
  *
- * 三个都是实测才知道的坑（用 Edge headless 量出来的，不是猜的）：
+ * 实测才知道的坑（用 Edge headless 量出来的，不是猜的）：
  *   1. 只设 `height: auto` 不读 scrollHeight 就不会变高，框子永远是 1 行。
  *   2. **`box-sizing: border-box` 下 scrollHeight 不含边框**，
  *      直接把 scrollHeight 赋给 height 会永远差 2px（1px 上下边框），
  *      非封顶状态下一直有一条 2px 的滚动量，光标行被切掉一条。
  *      所以要把 `offsetHeight - clientHeight`（正好是上下边框）补上。
- *   3. 变高之后不把 scrollTop 顶到底的话，光标会停在旧位置被挤出可视区，
- *      用户得手动往下滑才能看见自己刚打的字。
+ *
+ * 注意**不要**在每次重算后 `scrollTop = scrollHeight` 强制滚到底：
+ * 真机反馈「输入的文字只会出现在最后面，没法在指针处打字」——强制到底会把
+ * 正在编辑的中间位置顶出视口。textArea 在输入时原生就会把光标保持在可视区，
+ * 这里只负责高度，滚动交给浏览器。高度被压到 130px 封顶、内容溢出时，
+ * 用户手动滚动即可，不主动干预。
  */
 function resizeComposer() {
   const el = taEl.value
@@ -211,8 +215,6 @@ function resizeComposer() {
   const border = Math.max(0, el.offsetHeight - el.clientHeight)
   const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
   el.style.height = `${h}px`
-  // 让最新一行/光标留在可视区内
-  el.scrollTop = el.scrollHeight
   // 输入区变高会挤压上面的聊天区，保持消息仍贴在底部
   void scrollToBottom()
 }
@@ -240,7 +242,6 @@ function startComposerWatch() {
     if (h === lastComposerH) return // 高度没变就不动，避免无谓重排
     lastComposerH = h
     el.style.height = `${h}px`
-    el.scrollTop = el.scrollHeight
   }, 150)
 }
 
@@ -570,11 +571,8 @@ const memoryHint = computed(() => {
             style="display: none"
             @change="onAttach"
           />
-          <div class="attach" @click="fileInput?.click()">
-            <TabIcon name="paperclip" :size="20" />
-          </div>
-          <div class="ta-wrap" :class="{ 'has-btn': showExpandBtn }">
-            <!-- 内容 ≥3 行时出现的微信式展开按钮：点击进全屏编辑 -->
+          <!-- 回形针按钮 + 其上方的内容 ≥3 行时的展开按钮（不进输入框，避免占光标位） -->
+          <div class="attach-col">
             <button
               v-if="showExpandBtn"
               class="expand-btn"
@@ -592,6 +590,11 @@ const memoryHint = computed(() => {
                 />
               </svg>
             </button>
+            <div class="attach" @click="fileInput?.click()">
+              <TabIcon name="paperclip" :size="20" />
+            </div>
+          </div>
+          <div class="ta-wrap">
             <textarea
               ref="taEl"
               v-model="input"

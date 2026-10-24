@@ -485,13 +485,20 @@ describe('会话详情：能打字就必须能发送', () => {
     expect((ta.element as HTMLTextAreaElement).style.height).toBe('130px')
   })
 
-  it('把 scrollTop 顶到底（仅代码路径）', async () => {
+  /**
+   * 回归钉子：resizeComposer **不得**强制 `scrollTop = scrollHeight` 滚到底。
+   * 真机反馈「输入的文字只会出现在最后面，没法在指针处打字」——
+   * 强制到底把正在编辑的中间位置顶出视口；光标可见性交给浏览器原生行为。
+   */
+  it('不强制把 scrollTop 顶到底（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
     stubScrollHeight(el, 96)
     await ta.trigger('input')
-    expect(el.scrollTop).toBe(96)
+    // 高度按内容算，但 scrollTop 不被程序改写成 scrollHeight
+    expect(el.style.height).toBe('96px')
+    expect(el.scrollTop).not.toBe(96)
   })
 
   it('发送后高度缩回（仅代码路径）', async () => {
@@ -653,7 +660,7 @@ describe('会话详情：能打字就必须能发送', () => {
       expect(w.find('.expand-btn').exists()).toBe(false)
     })
 
-    it('达到 3 行（scrollHeight ≥ 88）左上角出现展开按钮', async () => {
+    it('达到 3 行（scrollHeight ≥ 88）出现展开按钮，且在回形针按钮上方', async () => {
       const w = await mountSession()
       const ta = w.find('textarea')
       const el = ta.element as HTMLTextAreaElement
@@ -662,7 +669,17 @@ describe('会话详情：能打字就必须能发送', () => {
       await ta.trigger('input')
       await nextTick()
       await flushPromises()
-      expect(w.find('.expand-btn').exists()).toBe(true)
+      const btn = w.find('.expand-btn')
+      expect(btn.exists()).toBe(true)
+      // 按钮不在输入框内：位于回形针按钮（.attach）上方的 .attach-col 里
+      const col = btn.element.parentElement
+      expect(col!.classList.contains('attach-col')).toBe(true)
+      const children = Array.from(col!.children)
+      expect(children[0]).toBe(btn.element)
+      expect(children[1].classList.contains('attach')).toBe(true)
+      // 输入框仍在独立的 .ta-wrap 里，不包含按钮
+      expect(el.parentElement!.classList.contains('ta-wrap')).toBe(true)
+      expect(el.parentElement!.querySelector('.expand-btn')).toBeNull()
     })
 
     it('点击展开按钮进全屏，内容同步；再点收起恢复且内容保留', async () => {
