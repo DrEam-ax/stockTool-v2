@@ -278,6 +278,25 @@ function onComposerInput() {
 const COMPOSER_MAX_H = 130
 
 /**
+ * WebView 123+（Chrome 123+）原生支持 `field-sizing: content`（styles.css 已声明），
+ * 输入框高度由浏览器自己按内容撑开，**JS 不需要也不应该再碰 height**。
+ *
+ * 为什么必须让 JS 收手 —— 这是「输入的字强制在最后、不在光标处」的根因：
+ *   真机 Android WebView 上，中文输入法组合态里每打一个键，聚焦定时器（150ms）
+ *   和 @input 都会执行 `el.style.height='auto'` → 强制重排 → 正在编辑的
+ *   textarea 被浏览器重新布局 → 输入法关联的光标定位被打断，新输入的字
+ *   就落到文本末尾。
+ *   原生 field-sizing 已经接管了「内容变 → 高度变」，JS 那套只留给不支持
+ *   field-sizing 的旧内核做兜底，两者绝不重复跑。
+ */
+/**
+ * WebView 123+（Chrome 123+）原生支持 `field-sizing: content`（styles.css 已声明），
+ * 输入框高度由浏览器自己按内容撑开，**JS 不需要也不应该再碰 height**。
+ * 判定逻辑见 `lib/composer.ts`（抽成纯函数便于单测防回归）。
+ */
+import { HAS_FIELD_SIZING } from '@/lib/composer'
+
+/**
  * 输入框随内容变高，并保证光标行留在可视区内。
  *
  * 实测才知道的坑（用 Edge headless 量出来的，不是猜的）：
@@ -296,6 +315,9 @@ const COMPOSER_MAX_H = 130
 function resizeComposer() {
   const el = taEl.value
   if (!el) return
+  // 原生 field-sizing 已接管高度：JS 收手，避免每次 input/定时器强制重排
+  // 打断输入法光标定位（见 HAS_FIELD_SIZING 注释）
+  if (HAS_FIELD_SIZING) return
   el.style.height = 'auto'
   // border-box 下 height 不含边框，用差值补回来（比读 computedStyle 简单可靠）
   const border = Math.max(0, el.offsetHeight - el.clientHeight)
@@ -318,6 +340,9 @@ let composerTimer: number | null = null
 let lastComposerH = -1
 
 function startComposerWatch() {
+  // 原生 field-sizing 已接管高度，不再需要定时轮询 —— 轮询的
+  // `height='auto'` 重排正是真机上输入法光标被顶到末尾的元凶
+  if (HAS_FIELD_SIZING) return
   if (composerTimer != null) return
   composerTimer = window.setInterval(() => {
     const el = taEl.value

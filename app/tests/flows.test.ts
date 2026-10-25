@@ -15,6 +15,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
 import KnowledgeView from '@/views/KnowledgeView.vue'
 import SessionsView from '@/views/SessionsView.vue'
+import { shouldUseNativeFieldSizing } from '@/lib/composer'
 import { useKnowledge } from '@/stores/knowledge'
 import { useSessions } from '@/stores/sessions'
 import { useProviders } from '@/stores/providers'
@@ -851,6 +852,24 @@ describe('会话详情：能打字就必须能发送', () => {
       const after = sw.style.transform
       expect(after).not.toBe(before)
       expect(after).toContain('translate(')
+    })
+  })
+
+  describe('输入框光标保护（field-sizing 收手判定）', () => {
+    it('只有安卓真机 + 浏览器支持 field-sizing 时才让 JS 收手', () => {
+      // 真机：Android + 支持 → 收手（不碰 height，避免重排打断输入法光标）
+      expect(
+        shouldUseNativeFieldSizing('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/131.0', () => true),
+      ).toBe(true)
+      // 桌面浏览器：CSS.supports 对未知属性也可能返回 true，但不能收手
+      // （开发调试没有安卓输入法组合态问题，JS 高度兜底继续跑）
+      expect(
+        shouldUseNativeFieldSizing('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0', () => true),
+      ).toBe(false)
+      // 安卓但浏览器不支持 field-sizing（旧 WebView）→ 走 JS 兜底
+      expect(
+        shouldUseNativeFieldSizing('Mozilla/5.0 (Linux; Android 10) Chrome/91.0', () => false),
+      ).toBe(false)
     })
   })
 })
