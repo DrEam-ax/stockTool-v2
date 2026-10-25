@@ -200,6 +200,67 @@ function dragEnd() {
   /* 保留 */
 }
 
+/**
+ * 切换按钮待机半隐：
+ *   · 5s 不点击、不移动 → 右移半边出屏 + 变淡（docked）
+ *   · 用户主动把它拖到屏幕右半松手 → 立即 docked，不等 5s
+ *   · 再次触碰（pointerdown）→ 恢复全显 + 取消暗淡，重新计时
+ */
+const docked = ref(false)
+let dockTimer: number | null = null
+/** 右移量：原 right:10px + 出屏 18px（42px 宽 → 露一半多一点便于再触碰） */
+const DOCK_OFFSET = 28
+/** 待机时长：5s 无交互进入半隐 */
+const DOCK_MS = 5000
+
+const cmpTransform = computed(() => {
+  const dx = switchX.value + (docked.value ? DOCK_OFFSET : 0)
+  return `translate(${dx}px, ${switchY.value}px)`
+})
+
+function clearDockTimer() {
+  if (dockTimer != null) {
+    clearTimeout(dockTimer)
+    dockTimer = null
+  }
+}
+
+function armDockTimer() {
+  clearDockTimer()
+  dockTimer = window.setTimeout(() => {
+    docked.value = true
+    dockTimer = null
+  }, DOCK_MS)
+}
+
+/** 触碰（按下）立即恢复全显，取消暗淡 */
+function onCmpPointerDown(e: PointerEvent) {
+  docked.value = false
+  clearDockTimer()
+  dragStart(e)
+}
+
+/** 松开：右移判定 + 重新计时 */
+function onCmpPointerUp(e: PointerEvent) {
+  dragEnd()
+  // 按钮中心（switchX + right 10 + 半宽 21）落在屏幕右半 → 视为用户主动右移
+  if (switchX.value + 31 > window.innerWidth / 2) {
+    docked.value = true
+    clearDockTimer()
+  } else {
+    armDockTimer()
+  }
+}
+
+// 按钮出现/消失时管理待机定时器
+watch(showCmpSwitch, (v) => {
+  if (v) armDockTimer()
+  else {
+    clearDockTimer()
+    docked.value = false
+  }
+})
+
 const streaming = computed(() => sessions.streamingId.value === sessionId.value)
 const noProvider = computed(() => providers.value.length === 0)
 const openDetails = ref(new Set<string>())
@@ -407,6 +468,7 @@ function onComposerBlur() {
 
 // 离开会话页时把定时器收掉，别在后台空转
 onUnmounted(stopComposerWatch)
+onUnmounted(clearDockTimer)
 
 async function onAttach(e: Event) {
   const inp = e.target as HTMLInputElement
@@ -920,13 +982,14 @@ const memoryHint = computed(() => {
     <div
       v-if="showCmpSwitch"
       class="cmp-switch"
-      :style="{ transform: `translate(${switchX}px, ${switchY}px)` }"
+      :class="{ docked }"
+      :style="{ transform: cmpTransform }"
       aria-label="切换对比回答"
       @click="!dragMoved && flipCompareView()"
-      @pointerdown="dragStart"
+      @pointerdown="onCmpPointerDown"
       @pointermove="dragMove"
-      @pointerup="dragEnd"
-      @pointercancel="dragEnd"
+      @pointerup="onCmpPointerUp"
+      @pointercancel="onCmpPointerUp"
     >
       <TabIcon name="compare" :size="18" />
     </div>

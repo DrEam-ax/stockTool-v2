@@ -927,6 +927,76 @@ describe('会话详情：能打字就必须能发送', () => {
       expect(after).not.toBe(before)
       expect(after).toContain('translate(')
     })
+
+    it('切换按钮待机：5s 无交互进入半隐（docked），触碰恢复', async () => {
+      const w = await mountSession()
+      // 发送一条对比，让按钮出现（真实 timers 完成挂载/发送）
+      await w.find('button[aria-label="工具栏"]').trigger('click')
+      await nextTick()
+      const compareCell = w.findAll('.tool-cell').find((c) => c.text().includes('对比'))
+      await compareCell!.trigger('click')
+      await nextTick()
+      const ta = w.find('textarea')
+      await ta.setValue('待机测试')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      expect(sw).toBeTruthy()
+      expect(sw.classList.contains('docked')).toBe(false)
+
+      // 启用 fake timers，做一次轻点（pointerdown+up，不移动）重新计时
+      vi.useFakeTimers()
+      try {
+        sw.dispatchEvent(new PointerEvent('pointerdown', { clientX: 20, clientY: 20, bubbles: true }))
+        sw.dispatchEvent(new PointerEvent('pointerup', { clientX: 20, clientY: 20, bubbles: true }))
+        await vi.advanceTimersByTimeAsync(5000)
+        // 5s 无交互 → 半隐
+        expect(sw.classList.contains('docked')).toBe(true)
+        // 半隐时 transform 带右移偏移（半边出屏）
+        expect(sw.style.transform).toContain('28px')
+
+        // 再次触碰 → 恢复全显 + 取消暗淡
+        sw.dispatchEvent(new PointerEvent('pointerdown', { clientX: 20, clientY: 20, bubbles: true }))
+        await nextTick()
+        expect(sw.classList.contains('docked')).toBe(false)
+        expect(sw.style.transform).not.toContain('28px')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('切换按钮待机：用户主动右移松手立即半隐，触碰恢复', async () => {
+      const w = await mountSession()
+      await w.find('button[aria-label="工具栏"]').trigger('click')
+      await nextTick()
+      const compareCell = w.findAll('.tool-cell').find((c) => c.text().includes('对比'))
+      await compareCell!.trigger('click')
+      await nextTick()
+      const ta = w.find('textarea')
+      await ta.setValue('右移测试')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      // 拖到屏幕右半（jsdom 视口 1024 宽，中心 512；按钮中心过中线即右移）
+      sw.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 100, bubbles: true }))
+      sw.dispatchEvent(new PointerEvent('pointermove', { clientX: 800, clientY: 120, bubbles: true }))
+      sw.dispatchEvent(new PointerEvent('pointerup', { clientX: 800, clientY: 120, bubbles: true }))
+      await nextTick()
+      expect(sw.classList.contains('docked')).toBe(true)
+
+      // 触碰恢复
+      sw.dispatchEvent(new PointerEvent('pointerdown', { clientX: 800, clientY: 120, bubbles: true }))
+      await nextTick()
+      expect(sw.classList.contains('docked')).toBe(false)
+    })
   })
 
   describe('输入框光标保护（field-sizing 收手判定）', () => {

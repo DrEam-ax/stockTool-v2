@@ -1156,6 +1156,13 @@ textarea {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /* 待机半隐：右移出屏与变淡的过渡 */
+  transition: opacity 0.2s ease, transform 0.25s ease;
+}
+
+/* 待机半隐：半边出屏 + 变淡（5s 无交互或用户右移触发，触碰恢复） */
+.cmp-switch.docked {
+  opacity: 0.45;
 }
 
 .cmp-switch:active {
