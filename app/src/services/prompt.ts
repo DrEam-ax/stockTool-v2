@@ -341,8 +341,7 @@ function buildAdvisorPrompt(
 }
 
 /** research 模式：他是研究对象 */
-function buildResearchPrompt(args: BuildPromptArgs, notice?: string): string {
-  const horizon = args.horizon ?? 20
+function buildResearchPrompt(args: BuildPromptArgs, notice?: string): string {  const horizon = args.horizon ?? 20
   const limit = args.perKbLimit ?? 24
   const blocks: string[] = []
 
@@ -432,6 +431,81 @@ function buildResearchPrompt(args: BuildPromptArgs, notice?: string): string {
       '5. 若用户持仓与大V观点冲突，要同时呈现两边，让用户自己判断。',
       '6. 结尾用一句话提示：以上是基于历史观点的研究整理，不构成投资建议。',
       '7. 用中文回答，条理清晰，不要长篇大论。',
+    ].join('\n'),
+  )
+
+  return blocks.join('\n\n')
+}
+
+export interface BuildAnalystArgs {
+  question: string
+  memory?: MemoryContext | null
+  focusSubject?: { secid?: string; name: string } | null
+  /** 有没有可用的工具 —— 决定"先查证"的口径 */
+  hasTools?: boolean
+  allowOnline?: boolean
+}
+
+/**
+ * 「专业金融分析师」提示词 —— 对比请教的分析侧。
+ *
+ * 与军师（依赖知识库 persona / 历史观点）不同，这一侧**不依赖任何特定人物的
+ * 历史观点**，完全基于通用金融逻辑 + 最新数据独立分析。
+ * 两套提示词互不影响，生成也互不影响，方便用户对照。
+ */
+export function buildAnalystSystemPrompt(args: BuildAnalystArgs): string {
+  const hasTools = args.hasTools !== false
+  const blocks: string[] = []
+
+  blocks.push(
+    '你是「专业金融分析师」，供职于一家头部机构的投研部，' +
+      '擅长宏观研判、行业比较与个股/基金的基本面与估值分析。' +
+      '现在用户向你咨询一个投资问题，请你**独立**给出你的分析。',
+  )
+
+  if (hasTools) {
+    blocks.push(
+      [
+        '## 工作要求',
+        '1. 涉及任何实时数据（价格、涨跌幅、成交额、资金流、公告、基金持仓、' +
+          '最新新闻）时，**必须先调用可用工具查真实数据**，不要凭记忆和印象回答。',
+        '2. 工具拿不到的数据，如实说明「没有数据」，绝不编造。',
+        '3. 这是你与「军师」（大V决策框架）的对比场：你不依赖任何特定人物的历史观点，' +
+          '完全基于通用金融逻辑与最新数据独立得出结论。',
+      ].join('\n'),
+    )
+  }
+
+  blocks.push(
+    [
+      '## 分析框架（按这个顺序组织回答）',
+      '1. 市场环境：当前大盘位置、风格与资金面（有数据先查数据）',
+      '2. 标的基本面与估值：质地、估值分位、景气度、盈利与现金流',
+      '3. 资金与交易面：主力动向、量价、拥挤度、情绪',
+      '4. 风险：哪些情景会推翻你的结论，最坏情况是什么',
+      '5. 结论：明确给出观点与依据，不模棱两可',
+    ].join('\n'),
+  )
+
+  if (args.focusSubject?.name) {
+    blocks.push(`## 本次聚焦\n用户想重点分析 **${args.focusSubject.name}**，请围绕它组织回答。`)
+  }
+
+  if (args.memory) {
+    blocks.push('## 用户情况\n' + formatMemory(args.memory))
+  } else {
+    blocks.push(
+      '## 用户情况\n用户已**关闭全局记忆**，本次不要引用任何持仓或个人偏好，只做纯粹的标的分析。',
+    )
+  }
+
+  blocks.push(
+    [
+      '## 回答要求',
+      '1. 观点明确、依据充分，不模棱两可；数据与逻辑不符时如实承认不确定性。',
+      '2. 与「军师」的回答是两套独立分析，你不需要参考或呼应对方，给出你自己的判断即可。',
+      '3. 用中文回答，结构清晰，可加小标题，但要控制在合理篇幅。',
+      '4. 结尾用一句话提示：以上为专业分析参考，不构成投资建议。',
     ].join('\n'),
   )
 

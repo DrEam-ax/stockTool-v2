@@ -9,11 +9,11 @@
  */
 
 import { computed, ref } from 'vue'
-import type { ChatMessage, KnowledgeBase, Session, ToolCallRecord } from '@/types'
+import type { ChatMessage, KnowledgeBase, ParallelSide, Session, ToolCallRecord } from '@/types'
 import * as db from '@/lib/db'
 import { nowIso, uid } from '@/lib/fmt'
 import type { LlmMessage } from '@/services/llm'
-import { buildSystemPrompt, type MemoryContext } from '@/services/prompt'
+import { buildSystemPrompt, buildAnalystSystemPrompt, type MemoryContext } from '@/services/prompt'
 import { runAgent, type ToolCallDetail } from '@/services/agent'
 import { activeTools } from '@/services/tools'
 import { useProviders } from './providers'
@@ -106,9 +106,13 @@ export function useSessions() {
     return sessions.value.find((s) => s.id === id)
   }
 
-  /** 截断后的历史消息（不含当前这句提问 —— runAgent 会自己拼上） */
+  /** 截断后的历史消息（不含当前这句提问 —— runAgent 会自己拼上）。
+   *  对比请教（parallel）消息是"双轨演示"，不进入后续上下文，
+   *  避免两套回答互相污染之后的对话。 */
   function buildHistory(s: Session): LlmMessage[] {
-    const usable = s.messages.filter((m) => !m.pending && !m.error && m.content)
+    const usable = s.messages.filter(
+      (m) => !m.pending && !m.error && m.content && !m.parallel,
+    )
     const recent = usable.slice(-MAX_HISTORY_MESSAGES)
 
     let budget = MAX_HISTORY_CHARS
@@ -303,6 +307,164 @@ export function useSessions() {
     abortController?.abort()
   }
 
+  /**
+   * 对比请教：同一问题生成**两套互不影响**的回答——
+   *   · 军师侧（advisor）：走知识库 persona / 研究模式，用大V的决策框架回答
+   *   · 专业分析侧（analyst）：不带知识库，用「专业金融分析师」自带提示词，
+   *     基于通用金融逻辑 + 工具查到的真实数据分析
+   * 两套并行生成、各自记录工具调用；结果都挂在同一条 parallel 消息里，
+   * 由用户通过右侧切换按钮切换显示。
+   */
+  async function sendCompare(
+    sessionId: string,
+    text: string,
+    images: string[] = [],
+  ): Promise<void> {
+    const s = find(sessionId)
+    if (!s) throw new Error('会话不存在')
+    const provider = defaultProvider.value
+    if (!provider) throw new Error('还没有配置模型，请先到「设置 → 模型」添加一个')
+
+    const kbs: KnowledgeBase[] = knowledge.resolve(s.activeKbIds)
+    const memCtx = memoryContextFor(s)
+    const mode = s.mode ?? 'research'
+    const toolCtx = {
+      kbs,
+      config: tools.config.value,
+      holdings: memCtx?.holdings ?? [],
+      allowOnline: Boolean(s.allowOnline),
+    }
+    const hasTools = activeTools(toolCtx).length > 0
+
+    const advisorSystem = buildSystemPrompt({
+      kbs,
+      question: text,
+      memory: memCtx,
+      focusSubject: s.focusSubject ?? null,
+      mode,
+      personaAuthorUid: s.personaAuthorUid ?? null,
+      auditContext: s.auditContext,
+      hasTools,
+      allowOnline: Boolean(s.allowOnline),
+    })
+    const analystSystem = buildAnalystSystemPrompt({
+      question: text,
+      memory: memCtx,
+      focusSubject: s.focusSubject ?? null,
+      hasTools,
+      allowOnline: Boolean(s.allowOnline),
+    })
+
+    // 历史必须在 push 当前提问之前取
+    const history = buildHistory(s)
+
+    const userMsg: ChatMessage = {
+      id: uid('m_'),
+      role: 'user',
+      content: text,
+      images: images.length ? images : undefined,
+      createdAt: nowIso(),
+    }
+    s.messages.push(userMsg)
+    if (s.messages.filter((m) => m.role === 'user').length === 1) {
+      s.title = text.slice(0, 24) || '图片分析'
+    }
+
+    const assistant: ChatMessage = {
+      id: uid('m_'),
+      role: 'assistant',
+      content: '',
+      createdAt: nowIso(),
+      providerName: provider.name,
+      model: provider.model,
+      usedKb: kbs.map((k) => ({
+        id: k.id,
+        title: k.manifest.title,
+        author: k.author?.name ?? '',
+      })),
+      usedMemory: Boolean(memCtx),
+      mode,
+      toolCalls: [],
+      pending: true,
+      parallel: {
+        advisor: { content: '', toolCalls: [] },
+        analyst: { content: '', toolCalls: [] },
+        active: 'advisor',
+      },
+    }
+    s.messages.push(assistant)
+    await save(s)
+
+    streamingId.value = s.id
+    abortController = new AbortController()
+
+    /** 给某一侧跑完整 Agent 循环，流式回调只写该侧，互不影响 */
+    async function runOne(side: ParallelSide, system: string) {
+      const recordIndex = new Map<string, ToolCallRecord>()
+      try {
+        const result = await runAgent({
+          provider,
+          systemPrompt: system,
+          history,
+          question: text,
+          questionImages: images,
+          ctx: { ...toolCtx, signal: abortController!.signal },
+          maxRounds: tools.config.value.maxRounds,
+          signal: abortController!.signal,
+          callbacks: {
+            onAnswerDelta: (chunk) => {
+              side.content += chunk
+            },
+            onThinking: (t) => {
+              side.content = ''
+              side.thinking = side.thinking ? `${side.thinking}\n\n${t}` : t
+            },
+            onToolStart: (call) => {
+              const rec: ToolCallRecord = {
+                id: call.id,
+                name: call.name,
+                display: `正在${call.title}…`,
+                args: call.args,
+                ok: false,
+                ms: 0,
+              }
+              recordIndex.set(call.id, rec)
+              side.toolCalls = [...(side.toolCalls ?? []), rec]
+            },
+            onToolEnd: (call) => {
+              const rec = recordIndex.get(call.id)
+              if (!rec) return
+              rec.display = call.display
+              rec.ok = call.ok
+              rec.summary = call.summary
+              rec.error = call.error
+              rec.ms = call.ms
+              rec.detail = call.content.slice(0, 1200)
+              side.toolCalls = [...(side.toolCalls ?? [])]
+            },
+          },
+        })
+        side.content = result.answer || side.content
+        side.thinking = result.thinking || side.thinking
+        side.hitRoundLimit = result.hitRoundLimit
+        side.usage = result.usage
+      } catch (e) {
+        side.error = e instanceof Error ? e.message : String(e)
+      }
+    }
+
+    const parallel = assistant.parallel! // 上面刚赋值，一定存在
+    try {
+      // 两套并行生成，互不影响
+      await Promise.all([runOne(parallel.advisor, advisorSystem), runOne(parallel.analyst, analystSystem)])
+    } finally {
+      assistant.pending = false
+      streamingId.value = null
+      abortController = null
+      await save(s)
+    }
+  }
+
   /** 重试最后一条失败的回答 */
   async function retryLast(sessionId: string): Promise<void> {
     const s = find(sessionId)
@@ -333,6 +495,7 @@ export function useSessions() {
     clearMessages,
     find,
     send,
+    sendCompare,
     abort,
     retryLast,
   }

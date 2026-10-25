@@ -7,7 +7,7 @@
  *     没有框架的知识库会不会诚实退回研究模式
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { defineComponent, h, nextTick } from 'vue'
@@ -717,6 +717,140 @@ describe('会话详情：能打字就必须能发送', () => {
       expect(document.querySelector('.composer-fs')).toBeNull()
       // 折叠输入框带着全屏里补的内容（同一 input 状态）
       expect(el.value).toBe('全屏里补一句')
+    })
+  })
+
+  describe('加号工具栏与对比请教', () => {
+    // 双轨生成会并发 fetch；测试里立即失败（两侧 error 落定），
+    // 不依赖真实网络的失败时序，pending 才能在 flushPromises 后稳定为 false
+    beforeEach(() => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('mock network down')
+        }),
+      )
+    })
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('点加号展开微信式工具栏（图片/对比），加号变减号，再点收起', async () => {
+      const w = await mountSession()
+      // 初始：无工具栏
+      expect(w.find('.tool-sheet').exists()).toBe(true)
+      expect((w.find('.tool-sheet').element as HTMLElement).style.display).toBe('none')
+      const plus = w.find('button[aria-label="工具栏"]')
+      expect(plus.exists()).toBe(true)
+
+      await plus.trigger('click')
+      await nextTick()
+      const sheet = w.find('.tool-sheet')
+      expect(sheet.isVisible()).toBe(true)
+      const cells = w.findAll('.tool-cell')
+      expect(cells.length).toBe(2)
+      expect(w.text()).toContain('图片')
+      expect(w.text()).toContain('对比')
+      // 展开态：加号 → 减号（只剩一条横线路径）
+      expect(w.find('button[aria-label="工具栏"] .attach').exists() || plus.classes('on')).toBe(true)
+
+      // 再点收起
+      await plus.trigger('click')
+      await nextTick()
+      expect(w.find('.tool-sheet').isVisible()).toBe(false)
+    })
+
+    it('点「对比」进入对比模式，出提示条；发送后双轨生成 parallel 消息', async () => {
+      const w = await mountSession()
+      await w.find('button[aria-label="工具栏"]').trigger('click')
+      await nextTick()
+      const compareCell = w.findAll('.tool-cell').find((c) => c.text().includes('对比'))
+      await compareCell!.trigger('click')
+      await nextTick()
+      // 对比模式提示条出现，工具栏收起
+      expect(w.find('.compare-banner').exists()).toBe(true)
+      expect(w.text()).toContain('对比请教')
+
+      const ta = w.find('textarea')
+      await ta.setValue('帮我看看半导体这个持仓')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const msgs = useSessions().sessions.value[0].messages
+      const last = msgs[msgs.length - 1]
+      // 双轨结构：军师 + 专业分析，两套独立
+      expect(last.parallel).toBeTruthy()
+      expect(last.parallel!.advisor).toBeTruthy()
+      expect(last.parallel!.analyst).toBeTruthy()
+      expect(last.parallel!.active).toBe('advisor')
+      expect(last.pending).toBe(false)
+      // 对比模式一次用完退出
+      expect(w.find('.compare-banner').exists()).toBe(false)
+    })
+
+    it('对比消息渲染当前激活侧，右侧按钮可切换军师/专业分析', async () => {
+      const w = await mountSession()
+      await w.find('button[aria-label="工具栏"]').trigger('click')
+      await nextTick()
+      const compareCell = w.findAll('.tool-cell').find((c) => c.text().includes('对比'))
+      await compareCell!.trigger('click')
+      await nextTick()
+      const ta = w.find('textarea')
+      await ta.setValue('对比测试问题')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      // 默认显示军师侧标签
+      expect(w.text()).toContain('军师观点')
+
+      // 右侧可拖动切换按钮存在
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      expect(sw).toBeTruthy()
+
+      // 点击切换 → 显示专业分析
+      sw.click()
+      await nextTick()
+      const msgs = useSessions().sessions.value[0].messages
+      expect(msgs[msgs.length - 1].parallel!.active).toBe('analyst')
+      expect(w.text()).toContain('专业分析')
+
+      // 再点切回军师
+      sw.click()
+      await nextTick()
+      expect(msgs[msgs.length - 1].parallel!.active).toBe('advisor')
+    })
+
+    it('切换按钮可拖动：pointer 拖动后位置变化', async () => {
+      const w = await mountSession()
+      await w.find('button[aria-label="工具栏"]').trigger('click')
+      await nextTick()
+      const compareCell = w.findAll('.tool-cell').find((c) => c.text().includes('对比'))
+      await compareCell!.trigger('click')
+      await nextTick()
+      const ta = w.find('textarea')
+      await ta.setValue('拖动测试')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      expect(sw).toBeTruthy()
+      const before = sw.style.transform
+      // pointerdown 从 (100,100) 拖到 (260,340)：位移 > 4px 视为拖动
+      sw.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 100, bubbles: true }))
+      sw.dispatchEvent(new PointerEvent('pointermove', { clientX: 260, clientY: 340, bubbles: true }))
+      await nextTick()
+      const after = sw.style.transform
+      expect(after).not.toBe(before)
+      expect(after).toContain('translate(')
     })
   })
 })

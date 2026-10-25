@@ -9,7 +9,7 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { AdvisorMode, Session } from '@/types'
+import type { AdvisorMode, ChatMessage, Session } from '@/types'
 import { useSessions } from '@/stores/sessions'
 import { useKnowledge } from '@/stores/knowledge'
 import TabIcon from '@/components/TabIcon.vue'
@@ -87,6 +87,92 @@ function closeComposerFs() {
 function onFsInput() {
   const el = fsEl.value
   if (el && el.value !== input.value) input.value = el.value
+}
+
+/**
+ * 加号工具栏（微信式）：输入框左侧加号，点击展开图片/对比工具，
+ * 加号变减号，再点收起。
+ */
+const toolSheet = ref(false)
+const compareMode = ref(false)
+
+function toggleToolSheet() {
+  toolSheet.value = !toolSheet.value
+  if (!toolSheet.value) compareMode.value = false // 关面板时顺带退出对比模式
+}
+
+function onPickImage() {
+  toolSheet.value = false
+  fileInput.value?.click()
+}
+
+function onPickCompare() {
+  toolSheet.value = false
+  compareMode.value = true
+}
+
+/**
+ * 对比请教的消息展示：一条 parallel 消息里有军师/专业分析两套回答，
+ * 只渲染 active 一侧；右侧浮动按钮（可拖动）点击切换。
+ */
+function activeSide(m: ChatMessage) {
+  if (!m.parallel) return null
+  return m.parallel.active === 'analyst' ? m.parallel.analyst : m.parallel.advisor
+}
+
+function flipParallel(m: ChatMessage) {
+  if (!m.parallel) return
+  m.parallel.active = m.parallel.active === 'advisor' ? 'analyst' : 'advisor'
+}
+
+/** 当前激活侧的、已展开详情的工具记录 */
+function sideOpenTools(m: ChatMessage) {
+  const side = activeSide(m)
+  return (side?.toolCalls ?? []).filter((x) => x.detail && openDetails.value.has(x.id))
+}
+
+/** 会话最后一条是 parallel（含生成中）时显示右侧切换按钮 */
+const showCmpSwitch = computed(() => {
+  const last = session.value?.messages[session.value.messages.length - 1]
+  return Boolean(last?.parallel)
+})
+
+function flipLastParallel() {
+  const s = session.value
+  const last = s?.messages[s.messages.length - 1]
+  if (last) flipParallel(last)
+}
+
+/** 切换按钮的拖动状态（fixed 定位 + translate 偏移） */
+const switchX = ref(0)
+const switchY = ref(0)
+let dragPointer = { x: 0, y: 0, startX: 0, startY: 0 }
+let dragMoved = false
+
+function dragStart(e: PointerEvent) {
+  dragMoved = false
+  dragPointer = {
+    x: e.clientX,
+    y: e.clientY,
+    startX: switchX.value,
+    startY: switchY.value,
+  }
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+}
+
+function dragMove(e: PointerEvent) {
+  const dx = e.clientX - dragPointer.x
+  const dy = e.clientY - dragPointer.y
+  if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true
+  // 限制在视口内，别把按钮拖没影
+  const maxX = window.innerWidth - 48
+  const maxY = window.innerHeight - 48
+  switchX.value = Math.max(4, Math.min(maxX, dragPointer.startX + dx))
+  switchY.value = Math.max(4, Math.min(maxY, dragPointer.startY + dy))
+}
+
+function dragEnd() {
+  /* 保留 */
 }
 
 const streaming = computed(() => sessions.streamingId.value === sessionId.value)
@@ -308,6 +394,13 @@ async function onSend() {
   if (taEl.value) taEl.value.value = ''
   // 高度要跟着缩回 1 行，否则发完还留着上次撑开的空档
   resizeComposer()
+  // 对比请教：双轨生成，军师 vs 专业分析
+  if (compareMode.value) {
+    compareMode.value = false // 一次性的技能，用完退出，省 token
+    toolSheet.value = false
+    await sessions.sendCompare(s.id, text, images)
+    return
+  }
   await sessions.send(s.id, text, images)
 }
 
@@ -467,7 +560,10 @@ const memoryHint = computed(() => {
 
           <!-- 工具调用轨迹：放在答案上方。这是判断可信度的依据 ——
                模型编造时这一栏会是空的 -->
-          <div v-if="m.role === 'assistant' && m.toolCalls?.length" class="tool-trail">
+          <div
+            v-if="m.role === 'assistant' && !m.parallel && m.toolCalls?.length"
+            class="tool-trail"
+          >
             <div
               v-for="t in m.toolCalls"
               :key="t.id"
@@ -497,8 +593,72 @@ const memoryHint = computed(() => {
             <div>{{ m.thinking }}</div>
           </details>
 
-          <div class="bubble" :class="{ error: Boolean(m.error) }">
-            <template v-if="m.role === 'assistant'">
+          <div
+            class="bubble"
+            :class="{ error: Boolean(m.parallel ? activeSide(m)?.error : m.error) }"
+          >
+            <!-- 对比请教：只显示当前激活的一侧（军师/专业分析），
+                 右侧浮动按钮或标题点击切换 -->
+            <template v-if="m.parallel">
+              <div class="cmp-side">
+                <div class="cmp-tag" @click="flipParallel(m)">
+                  <TabIcon
+                    :name="m.parallel.active === 'advisor' ? 'person' : 'compare'"
+                    :size="12"
+                  />
+                  {{ m.parallel.active === 'advisor' ? '军师观点' : '专业分析' }}
+                  <span class="cmp-flip">⇄ 看另一套</span>
+                </div>
+
+                <div v-if="activeSide(m)?.toolCalls?.length" class="tool-trail">
+                  <div
+                    v-for="t in activeSide(m)!.toolCalls!"
+                    :key="t.id"
+                    class="tool-row"
+                    :class="{ err: !t.ok }"
+                    @click="t.detail && toggleDetail(t.id)"
+                  >
+                    <span class="tc-ico">{{ t.ok ? '✓' : '✕' }}</span>
+                    <span class="tc-text">{{ t.display }}</span>
+                    <span v-if="t.summary && t.ok" class="chip">{{ t.summary }}</span>
+                    <span v-if="t.ms" class="muted small">{{ t.ms }}ms</span>
+                  </div>
+                  <div
+                    v-for="t in sideOpenTools(m)"
+                    :key="`d-${t.id}`"
+                    class="tool-detail"
+                  >
+                    <div v-if="t.error" class="small" style="color: var(--danger)">
+                      {{ t.error }}
+                    </div>
+                    <pre>{{ t.detail }}</pre>
+                  </div>
+                </div>
+
+                <details v-if="activeSide(m)?.thinking" class="thinking">
+                  <summary>思考过程</summary>
+                  <div>{{ activeSide(m)!.thinking }}</div>
+                </details>
+
+                <div v-if="!activeSide(m)?.content && m.pending" class="muted">
+                  <span class="spin" />
+                  {{
+                    activeSide(m)?.toolCalls?.length
+                      ? '等待工具结果…'
+                      : '正在生成…'
+                  }}
+                </div>
+                <div v-else-if="activeSide(m)?.content" v-html="renderMarkdown(activeSide(m)!.content)" />
+                <div v-if="activeSide(m)?.hitRoundLimit" class="alert warn" style="margin-top: 6px">
+                  已达到工具调用轮数上限，这一侧是强制收尾的，可能不完整。
+                </div>
+                <div v-if="activeSide(m)?.error" style="margin-top: 6px; white-space: pre-wrap">
+                  {{ activeSide(m)!.error }}
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="m.role === 'assistant'">
               <div v-if="!m.content && m.pending" class="muted">
                 <span class="spin" />
                 {{
@@ -536,7 +696,11 @@ const memoryHint = computed(() => {
                 {{ m.usedMemory ? '用了记忆' : '未用记忆' }}
               </span>
               <span v-if="m.model" class="muted">{{ m.model }}</span>
-              <span v-if="m.usage" class="muted">
+              <span v-if="m.parallel" class="muted">
+                军师 {{ m.parallel.advisor.usage?.completion ?? 0 }} · 分析
+                {{ m.parallel.analyst.usage?.completion ?? 0 }} tok
+              </span>
+              <span v-else-if="m.usage" class="muted">
                 {{ m.usage.prompt }}+{{ m.usage.completion }} tok
               </span>
               <span v-if="m.error" class="btn sm ghost" @click="sessions.retryLast(session!.id)">
@@ -562,6 +726,26 @@ const memoryHint = computed(() => {
             </button>
           </div>
         </div>
+
+        <!-- 对比请教模式提示 -->
+        <div v-if="compareMode" class="compare-banner">
+          <TabIcon name="compare" :size="14" />
+          <span class="cmp-banner-t">对比请教：军师观点 vs 专业分析，发送后双轨生成</span>
+          <button class="cmp-x" aria-label="退出对比模式" @click="compareMode = false">×</button>
+        </div>
+
+        <!-- 微信式工具栏：加号展开 -->
+        <div v-show="toolSheet" class="tool-sheet">
+          <button class="tool-cell" @click="onPickImage">
+            <span class="tool-ico"><TabIcon name="image" :size="26" /></span>
+            <span class="tool-name">图片</span>
+          </button>
+          <button class="tool-cell" @click="onPickCompare">
+            <span class="tool-ico"><TabIcon name="compare" :size="26" /></span>
+            <span class="tool-name">对比</span>
+          </button>
+        </div>
+
         <div class="composer-row">
           <input
             ref="fileInput"
@@ -571,7 +755,7 @@ const memoryHint = computed(() => {
             style="display: none"
             @change="onAttach"
           />
-          <!-- 回形针按钮 + 其上方的内容 ≥3 行时的展开按钮（不进输入框，避免占光标位） -->
+          <!-- 加号按钮（展开工具栏，展开时变减号）+ 上方 ≥3 行展开全屏按钮 -->
           <div class="attach-col">
             <button
               v-if="showExpandBtn"
@@ -590,9 +774,31 @@ const memoryHint = computed(() => {
                 />
               </svg>
             </button>
-            <div class="attach" @click="fileInput?.click()">
-              <TabIcon name="paperclip" :size="20" />
-            </div>
+            <button
+              class="attach"
+              :class="{ on: toolSheet }"
+              aria-label="工具栏"
+              @click="toggleToolSheet"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path
+                  v-if="!toolSheet"
+                  d="M12 5v14M5 12h14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+                <path
+                  v-else
+                  d="M5 12h14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
           </div>
           <div class="ta-wrap">
             <textarea
@@ -650,7 +856,20 @@ const memoryHint = computed(() => {
       </div>
     </Teleport>
 
-    <!-- 军师选择 -->
+    <!-- 对比请教：右侧可拖动的切换按钮（拖动换位置，点击切换军师/专业分析） -->
+    <div
+      v-if="showCmpSwitch"
+      class="cmp-switch"
+      :style="{ transform: `translate(${switchX}px, ${switchY}px)` }"
+      aria-label="切换对比回答"
+      @click="!dragMoved && flipLastParallel()"
+      @pointerdown="dragStart"
+      @pointermove="dragMove"
+      @pointerup="dragEnd"
+      @pointercancel="dragEnd"
+    >
+      <TabIcon name="compare" :size="18" />
+    </div>
     <div v-if="showKbPicker" class="modal-mask" @click.self="showKbPicker = false">
       <div class="modal">
         <h2>选择军师</h2>

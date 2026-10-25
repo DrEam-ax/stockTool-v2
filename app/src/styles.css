@@ -14,6 +14,9 @@
   --fg-mute: #6b7488;
   --accent: #4f8cff;
   --accent-dim: #2a4a86;
+  /* 主色极浅底：选中态、对比标签、工具栏激活态。
+     用 color-mix 派生自主色 —— 换主题自动跟着变，不用进主题表 */
+  --accent-weak: color-mix(in srgb, var(--accent) 14%, transparent);
   /* 主题化新增的语义变量（默认=深空蓝主题的值，主题切换时被 themes.ts 覆盖） */
   --accent-press: #3d78e0; /* 主色按钮按下态 */
   --on-accent: #ffffff; /* 主色底上的文字（按钮/选中 chip/FAB） */
@@ -979,15 +982,163 @@ textarea {
 .attach {
   width: 38px;
   height: 38px;
+  padding: 0;
   border-radius: 19px;
   background: var(--bg-2);
   border: 1px solid var(--line);
+  color: var(--fg);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   cursor: pointer;
   flex: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+/* 工具栏展开时：加号变减号，按钮进入激活态 */
+.attach.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+
+/* 微信式工具栏：加号展开，圆角方块图标 + 下方名字 */
+.tool-sheet {
+  display: flex;
+  gap: 22px;
+  padding: 10px 6px 12px;
+  animation: tool-sheet-in 0.18s ease-out;
+}
+
+@keyframes tool-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tool-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.tool-ico {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  transition: transform 0.1s;
+}
+
+.tool-cell:active .tool-ico {
+  transform: scale(0.94);
+}
+
+.tool-name {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* 对比请教模式提示条 */
+.compare-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.cmp-banner-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-x {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+/* 对比消息：当前激活的一侧 */
+.cmp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cmp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.cmp-flip {
+  font-weight: 400;
+  color: var(--fg-dim);
+  margin-left: 2px;
+}
+
+/* 右侧可拖动的切换按钮 */
+.cmp-switch {
+  position: fixed;
+  right: 10px;
+  top: 45%;
+  z-index: 60;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cmp-switch:active {
+  cursor: grabbing;
 }
 
 /* ---------- 数据展示 ---------- */

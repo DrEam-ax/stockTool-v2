@@ -311,6 +311,8 @@ export interface ChatMessage {
   error?: string
   usage?: { prompt: number; completion: number }
   pending?: boolean
+  /** 对比请教：同一问题的两套独立回答（军师 vs 专业分析） */
+  parallel?: ParallelAnswer
 }
 
 /** 一次工具调用的记录（给用户看的，也是事后追溯的依据） */
@@ -327,6 +329,28 @@ export interface ToolCallRecord {
   ms: number
   /** 原始返回，展开时可看 */
   detail?: string
+}
+
+/** 对比请教中某一侧的回答（军师 / 专业分析），两侧互不影响 */
+export interface ParallelSide {
+  content: string
+  /** 调用工具前的"思考"文本，不是答案 */
+  thinking?: string
+  toolCalls?: ToolCallRecord[]
+  /** 轮数用尽被迫收尾 */
+  hitRoundLimit?: boolean
+  error?: string
+  usage?: { prompt: number; completion: number }
+}
+
+/** 对比请教：同一问题的两套独立回答 */
+export interface ParallelAnswer {
+  /** 军师侧（知识库 persona / 研究模式） */
+  advisor: ParallelSide
+  /** 专业金融分析者侧（自带一套提示词，不依赖知识库） */
+  analyst: ParallelSide
+  /** 当前显示哪一侧 */
+  active: 'advisor' | 'analyst'
 }
 
 // ============================================================

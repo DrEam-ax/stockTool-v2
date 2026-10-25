@@ -16,6 +16,8 @@ export type IconName =
   | 'globe'
   | 'repeat'
   | 'paperclip'
+  | 'image'
+  | 'compare'
 
 withDefaults(
   defineProps<{ name: IconName; size?: number }>(),
@@ -66,6 +68,18 @@ const paths: Record<IconName, string[]> = {
   paperclip: [
     'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48',
   ],
+  // 图片：相框 + 山 + 太阳（工具栏「图片」）
+  image: [
+    'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z',
+    'M4 17l5-5 4 3 3-3 5 5',
+  ],
+  // 对比：左右对向箭头（工具栏「对比」/ 切换按钮）
+  compare: [
+    'M3 7h12',
+    'm11 3 4 4-4 4',
+    'M21 17H9',
+    'm13 13-4 4 4 4',
+  ],
 }
 
 /** 圆形子元素：各图标的中心圆 */
@@ -79,6 +93,8 @@ const circles: Record<IconName, Array<[number, number, number]>> = {
   kb: [],
   repeat: [],
   paperclip: [],
+  image: [[15.5, 8.5, 1.8]],
+  compare: [],
 }
 </script>
 
