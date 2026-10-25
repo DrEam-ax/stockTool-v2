@@ -553,7 +553,7 @@ describe('会话详情：能打字就必须能发送', () => {
       }
     })
 
-    it('右侧叉号弹出确认卡片，确认后删除会话（非当前会话不跳转）', async () => {
+    it('右侧叉号 → 确认卡片 → 点删除后这一行原地变撤销条，点撤销原样恢复', async () => {
       const ctx = await mountWithDrawer()
       try {
         await openDrawer(ctx)
@@ -569,20 +569,36 @@ describe('会话详情：能打字就必须能发送', () => {
         const card = document.querySelector('.confirm-card') as HTMLElement
         expect(card).toBeTruthy()
         expect(card.textContent).toContain('第二场')
-        // 点「删除」确认
+        // 点「删除」→ 不真删，该行原地变撤销条
         const okBtn = [...card.querySelectorAll('button')].find((b) => b.textContent!.includes('删除'))
         okBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        await flushPromises()
         await nextTick()
-        expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeFalsy()
-        // 当前会话没被删，不跳转
-        expect(ctx.router.currentRoute.value.path).toBe(`/s/${ctx.s1.id}`)
+        expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeTruthy()
+        const undoBar = document.querySelector('.drawer-undo') as HTMLElement
+        expect(undoBar).toBeTruthy()
+        expect(undoBar.textContent).toContain('第二场')
+        expect(undoBar.textContent).toContain('已删除')
+        expect(undoBar.textContent).toContain('撤销')
+        // 焦点到了「撤销」按钮
+        expect(document.activeElement?.textContent).toContain('撤销')
+
+        // 点「撤销」→ 撤销条缩回，这一行原样恢复，焦点回删除按钮
+        const undoBtn = undoBar.querySelector('.drawer-undo-btn') as HTMLElement
+        undoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await nextTick()
+        expect(document.querySelector('.drawer-undo')).toBeFalsy()
+        expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeTruthy()
+        const restored = [...document.querySelectorAll('.drawer-item')].find((el) =>
+          el.textContent!.includes('第二场'),
+        )
+        expect(restored).toBeTruthy()
+        expect(document.activeElement?.getAttribute('data-del-id')).toBe(ctx.s2.id)
       } finally {
         ctx.w.unmount()
       }
     })
 
-    it('删除的是当前正在看的会话时退回列表', async () => {
+    it('超时后真删：行收回、计数更新；删除的是当前会话时退回列表', async () => {
       const ctx = await mountWithDrawer()
       try {
         await openDrawer(ctx)
@@ -592,13 +608,85 @@ describe('会话详情：能打字就必须能发送', () => {
         const delBtn = target!.querySelector('.drawer-del') as HTMLElement
         delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await nextTick()
-        const card = document.querySelector('.confirm-card') as HTMLElement
-        const okBtn = [...card.querySelectorAll('button')].find((b) => b.textContent!.includes('删除'))
-        okBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        await flushPromises()
+        const okBtn = [...(document.querySelector('.confirm-card')!.querySelectorAll('button'))].find(
+          (b) => b.textContent!.includes('删除'),
+        )
+        // 点删除后启用 fake timers（让 5s 倒计时可控，不污染真实计时）
+        vi.useFakeTimers()
+        try {
+          okBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          await nextTick()
+          expect(useSessions().sessions.value.find((x) => x.id === ctx.s1.id)).toBeTruthy()
+          // 撤销条应已出现（startUndo 已执行、fake timer 已排）
+          expect(document.querySelector('.drawer-undo')).toBeTruthy()
+          // 5s 内未超时
+          await vi.advanceTimersByTimeAsync(4900)
+          expect(useSessions().sessions.value.find((x) => x.id === ctx.s1.id)).toBeTruthy()
+          // 到点真删 + 退回列表
+          await vi.runAllTimersAsync()
+          expect(useSessions().sessions.value.find((x) => x.id === ctx.s1.id)).toBeFalsy()
+          expect(ctx.router.currentRoute.value.path).toBe('/')
+          // 无下一行时焦点给「新建会话」
+          expect(document.activeElement?.textContent).toContain('新建会话')
+        } finally {
+          vi.useRealTimers()
+        }
+      } finally {
+        ctx.w.unmount()
+      }
+    })
+
+    it('鼠标停在撤销条上暂停计时，移开后继续', async () => {
+      const ctx = await mountWithDrawer()
+      try {
+        await openDrawer(ctx)
+        const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
+          el.textContent!.includes('第二场'),
+        )
+        ;(target!.querySelector('.drawer-del') as HTMLElement).dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        )
         await nextTick()
-        expect(useSessions().sessions.value.find((x) => x.id === ctx.s1.id)).toBeFalsy()
-        expect(ctx.router.currentRoute.value.path).toBe('/')
+        ;([...(document.querySelector('.confirm-card')!.querySelectorAll('button'))].find(
+          (b) => b.textContent!.includes('删除'),
+        ) as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await nextTick()
+
+        vi.useFakeTimers()
+        try {
+          const undoBar = document.querySelector('.drawer-undo') as HTMLElement
+          expect(undoBar).toBeTruthy()
+          // 鼠标停上 → 暂停：推进远超 5s 也不删
+          undoBar.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
+          await vi.advanceTimersByTimeAsync(10000)
+          expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeTruthy()
+          // 移开 → 从剩余时间继续，到点真删
+          undoBar.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }))
+          await vi.advanceTimersByTimeAsync(5000)
+          expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeFalsy()
+        } finally {
+          vi.useRealTimers()
+        }
+      } finally {
+        ctx.w.unmount()
+      }
+    })
+
+    it('点「＋ 新建会话」：关抽屉、当前页展开新建弹窗，不跳列表页', async () => {
+      const ctx = await mountWithDrawer()
+      try {
+        await openDrawer(ctx)
+        const foot = document.querySelector('.drawer-foot') as HTMLElement
+        const newBtn = foot.querySelector('button') as HTMLElement
+        newBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await nextTick()
+        // 抽屉关闭，新建弹窗在当前页打开
+        expect(document.querySelector('.drawer')).toBeFalsy()
+        const modal = document.querySelector('.modal') as HTMLElement
+        expect(modal).toBeTruthy()
+        expect(modal.textContent).toContain('新建会话')
+        // 不跳转列表页
+        expect(ctx.router.currentRoute.value.path).toBe(`/s/${ctx.s1.id}`)
       } finally {
         ctx.w.unmount()
       }

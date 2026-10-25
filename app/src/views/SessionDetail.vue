@@ -17,6 +17,7 @@ import type { IconName } from '@/components/TabIcon.vue'
 import { useMemory } from '@/stores/memory'
 import { useProviders } from '@/stores/providers'
 import SessionDrawer from '@/components/SessionDrawer.vue'
+import NewSessionModal from '@/components/NewSessionModal.vue'
 import { renderMarkdown } from '@/lib/fmt'
 import { compressImage, fileToDataUrl } from '@/services/llm'
 
@@ -55,6 +56,9 @@ const error = ref('')
 
 /** 左侧会话栏（三横线打开） */
 const drawerOpen = ref(false)
+
+/** 新建会话弹窗：从会话栏「＋ 新建会话」在当前页直接展开（不跳列表页） */
+const newSessionOpen = ref(false)
 
 /**
  * 微信式输入框：内容达到 3 行及以上时，左上角出现小按钮，
@@ -245,7 +249,7 @@ function onCmpPointerDown(e: PointerEvent) {
 }
 
 /** 松开：右移判定 + 重新计时 */
-function onCmpPointerUp(e: PointerEvent) {
+function onCmpPointerUp() {
   dragEnd()
   // 按钮中心（switchX + right 10 + 半宽 21）落在屏幕右半 → 视为用户主动右移
   if (switchX.value + 31 > window.innerWidth / 2) {
@@ -1038,7 +1042,14 @@ const memoryHint = computed(() => {
     <SessionDrawer
       :open="drawerOpen"
       @close="drawerOpen = false"
-      @new="drawerOpen = false; router.push('/')"
+      @new="drawerOpen = false; newSessionOpen = true"
+    />
+
+    <!-- 新建会话：在当前页展开，不跳列表页 -->
+    <NewSessionModal
+      :open="newSessionOpen"
+      @close="newSessionOpen = false"
+      @created="(s) => { newSessionOpen = false; router.push(`/s/${s.id}`) }"
     />
   </div>
 </template>

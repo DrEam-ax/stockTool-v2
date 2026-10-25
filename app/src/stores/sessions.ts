@@ -93,8 +93,10 @@ export function useSessions() {
   }
 
   async function remove(id: string) {
-    await db.remove(db.STORES.sessions, id)
+    // 先同步更新内存（UI 立即反馈、行收起不卡），再异步落盘。
+    // 顺序反过来会在慢速 IndexedDB 上让界面滞后于用户操作。
     sessions.value = sessions.value.filter((s) => s.id !== id)
+    await db.remove(db.STORES.sessions, id)
   }
 
   async function clearMessages(s: Session) {
