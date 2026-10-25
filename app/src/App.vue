@@ -35,12 +35,11 @@ const badge = computed(() => ({
 /**
  * 「会话」这个 tab 该跳哪里。
  *
- * 在会话模块内部（列表或详情）→ 跳列表，方便切换会话。
- * 从别的模块点回来 → 落回上次打开的会话，而不是把人踢回列表。
- * 若那个会话已被删除，退回列表，避免落到一个不存在的页面。
+ * 会话页展示**具体会话**：不管从哪个模块点回来，都落回上次打开的会话，
+ * 而不是把人踢回列表。若还没有会话（或上次那个已被删除），退回列表页
+ * （空态 + 新建入口）。
  */
 const sessionsTo = computed(() => {
-  if (activeTab.value === 'sessions') return '/'
   const id = sessions.lastSessionId.value
   if (id && sessions.find(id)) return `/s/${id}`
   return '/'

@@ -1435,3 +1435,140 @@ html.kbd-open .page-full {
 .grid3 + .card {
   margin-top: 10px;
 }
+
+/* ============ 左侧会话栏（抽屉） ============ */
+.drawer-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--mask);
+  z-index: 80;
+  /* 抽屉打开时，遮罩上的滑动不再链到背景页面（防滚动穿透） */
+  overscroll-behavior: contain;
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(78vw, 320px);
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-head b {
+  font-size: 16px;
+}
+
+.drawer-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px;
+}
+
+.drawer-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.drawer-item.current {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+
+.drawer-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.drawer-item-meta .chip {
+  font-size: 11px;
+  padding: 1px 7px;
+}
+
+.drawer-del {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-mute);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.drawer-del:active {
+  background: var(--bg-3);
+  color: var(--danger, #d64545);
+}
+
+.drawer-foot {
+  padding: 10px 14px calc(14px + var(--safe-b, 0px));
+  border-top: 1px solid var(--line);
+}
+
+/* 滑入滑出 */
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.drawer-enter-active .drawer,
+.drawer-leave-active .drawer {
+  transition: transform 0.25s ease;
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+}
+
+.drawer-enter-from .drawer,
+.drawer-leave-to .drawer {
+  transform: translateX(-100%);
+}

@@ -312,7 +312,7 @@ describe('底栏「会话」：从别的模块点回来要回到上次那个会�
     expect(link.attributes('href') ?? link.attributes('to')).toContain(`/s/${sess.id}`)
   })
 
-  it('已经在会话模块时，会话 tab 指向列表（方便切换）', async () => {
+  it('已经在会话模块时，会话 tab 仍指向该会话（会话页展示具体会话）', async () => {
     const s = useSessions()
     const sess = await s.create({ title: '当前会话' } as never)
     s.loaded.value = true
@@ -327,8 +327,8 @@ describe('底栏「会话」：从别的模块点回来要回到上次那个会�
 
     const link = w.findAll('.tabbar a')[0]
     const href = link.attributes('href') ?? link.attributes('to') ?? ''
-    // 语义：在会话模块内部时不该再指向某个具体会话，而是回列表方便切换
-    expect(href).not.toContain('/s/')
+    // 语义：会话 tab 不再回列表，而是落回最近打开的会话（具体会话页）
+    expect(href).toContain(`/s/${sess.id}`)
   })
 
   it('上次的会话已被删除时退回列表，不落到空页面', async () => {
@@ -453,6 +453,147 @@ describe('会话详情：能打字就必须能发送', () => {
     await flushPromises()
     const msgs = useSessions().sessions.value[0].messages
     expect(msgs.some((m) => m.role === 'user' && m.content.includes('持仓'))).toBe(true)
+  })
+
+  describe('左侧会话栏（三横线抽屉）', () => {
+    /**
+     * 会话页左上角三横线 → 左侧展开会话栏：
+     * 列出所有会话（标题 + 模式），点某一项进入该会话；
+     * 每项右侧小箭头是删除入口，确认后删除（删当前会话退回列表）。
+     */
+    async function mountWithDrawer() {
+      const p = useProviders()
+      p.providers.value = [
+        {
+          id: 'pv_test',
+          name: '测试模型',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'sk-test',
+          model: 'test-model',
+          supportsVision: false,
+          supportsJson: true,
+          temperature: 0.3,
+          maxTokens: 512,
+          isDefault: true,
+          createdAt: new Date().toISOString(),
+        },
+      ]
+      p.loaded.value = true
+
+      const s = useSessions()
+      const s1 = await s.create({
+        title: '新会话',
+        activeKbIds: [],
+        useGlobalMemory: true,
+        mode: 'research',
+        personaAuthorUid: null,
+        auditContext: null,
+      } as never)
+      const s2 = await s.create({
+        title: '第二场',
+        activeKbIds: [],
+        useGlobalMemory: true,
+        mode: 'persona',
+        personaAuthorUid: null,
+        auditContext: null,
+      } as never)
+      s.loaded.value = true
+
+      const router = await makeRouter()
+      await router.push(`/s/${s1.id}`)
+      await router.isReady()
+      const { default: SessionDetail } = await import('@/views/SessionDetail.vue')
+      const w = mount(SessionDetail, {
+        global: { plugins: [router] },
+        attachTo: document.body,
+      })
+      await flushPromises()
+      await nextTick()
+      return { w, router, s1, s2 }
+    }
+
+    async function openDrawer(w: ReturnType<typeof mountWithDrawer> extends Promise<infer T> ? T : never) {
+      const menu = w.w.findAll('button').find((b) => b.attributes('aria-label') === '打开会话列表')
+      expect(menu).toBeTruthy()
+      await menu!.trigger('click')
+      await nextTick()
+      return document.querySelector('.drawer') as HTMLElement | null
+    }
+
+    it('三横线打开抽屉，列出所有会话（标题 + 模式名）', async () => {
+      const ctx = await mountWithDrawer()
+      try {
+        const drawer = await openDrawer(ctx)
+        expect(drawer).toBeTruthy()
+        expect(drawer!.textContent).toContain('新会话')
+        expect(drawer!.textContent).toContain('第二场')
+        // 两种模式名都在（research → 研究历史观点，persona → 请教军师）
+        expect(drawer!.textContent).toContain('研究历史观点')
+        expect(drawer!.textContent).toContain('请教军师')
+      } finally {
+        ctx.w.unmount()
+      }
+    })
+
+    it('点某一项进入该会话并关闭抽屉', async () => {
+      const ctx = await mountWithDrawer()
+      try {
+        await openDrawer(ctx)
+        const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
+          el.textContent!.includes('第二场'),
+        )
+        expect(target).toBeTruthy()
+        ;(target as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flushPromises()
+        await nextTick()
+        expect(ctx.router.currentRoute.value.path).toBe(`/s/${ctx.s2.id}`)
+        expect(document.querySelector('.drawer')).toBeFalsy()
+      } finally {
+        ctx.w.unmount()
+      }
+    })
+
+    it('右侧小箭头确认后删除会话（非当前会话不跳转）', async () => {
+      const ctx = await mountWithDrawer()
+      const spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      try {
+        await openDrawer(ctx)
+        const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
+          el.textContent!.includes('第二场'),
+        )
+        const delBtn = target!.querySelector('.drawer-del') as HTMLElement
+        delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flushPromises()
+        await nextTick()
+        expect(spy).toHaveBeenCalled()
+        expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeFalsy()
+        // 当前会话没被删，不跳转
+        expect(ctx.router.currentRoute.value.path).toBe(`/s/${ctx.s1.id}`)
+      } finally {
+        spy.mockRestore()
+        ctx.w.unmount()
+      }
+    })
+
+    it('删除的是当前正在看的会话时退回列表', async () => {
+      const ctx = await mountWithDrawer()
+      const spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      try {
+        await openDrawer(ctx)
+        const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
+          el.textContent!.includes('新会话'),
+        )
+        const delBtn = target!.querySelector('.drawer-del') as HTMLElement
+        delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flushPromises()
+        await nextTick()
+        expect(spy).toHaveBeenCalled()
+        expect(ctx.router.currentRoute.value.path).toBe('/')
+      } finally {
+        spy.mockRestore()
+        ctx.w.unmount()
+      }
+    })
   })
 
   /**

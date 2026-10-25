@@ -16,6 +16,7 @@ import TabIcon from '@/components/TabIcon.vue'
 import type { IconName } from '@/components/TabIcon.vue'
 import { useMemory } from '@/stores/memory'
 import { useProviders } from '@/stores/providers'
+import SessionDrawer from '@/components/SessionDrawer.vue'
 import { renderMarkdown } from '@/lib/fmt'
 import { compressImage, fileToDataUrl } from '@/services/llm'
 
@@ -51,6 +52,9 @@ const chatEl = ref<HTMLElement | null>(null)
 const showKbPicker = ref(false)
 const kbDraft = ref<string[]>([])
 const error = ref('')
+
+/** 左侧会话栏（三横线打开） */
+const drawerOpen = ref(false)
 
 /**
  * 微信式输入框：内容达到 3 行及以上时，左上角出现小按钮，
@@ -606,7 +610,13 @@ const memoryHint = computed(() => {
     <template v-else>
       <!-- 顶栏 -->
       <div class="hdr">
-        <button class="btn sm ghost" @click="router.push('/')">‹</button>
+        <button
+          class="btn sm ghost icon-btn"
+          aria-label="打开会话列表"
+          @click="drawerOpen = true"
+        >
+          <TabIcon name="menu" :size="18" />
+        </button>
         <h1>
           <span @click="renameSession">{{ session.title }}</span>
           <div class="sub">{{ memoryHint }}</div>
@@ -1023,5 +1033,12 @@ const memoryHint = computed(() => {
         </div>
       </div>
     </div>
+
+    <!-- 左侧会话栏 -->
+    <SessionDrawer
+      :open="drawerOpen"
+      @close="drawerOpen = false"
+      @new="drawerOpen = false; router.push('/')"
+    />
   </div>
 </template>

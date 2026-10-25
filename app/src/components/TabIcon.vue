@@ -18,6 +18,8 @@ export type IconName =
   | 'paperclip'
   | 'image'
   | 'compare'
+  | 'menu'
+  | 'chevron'
 
 withDefaults(
   defineProps<{ name: IconName; size?: number }>(),
@@ -80,6 +82,10 @@ const paths: Record<IconName, string[]> = {
     'M21 17H9',
     'm13 13-4 4 4 4',
   ],
+  // 菜单：三横线（会话详情顶栏，打开左侧会话栏）
+  menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
+  // 右箭头（会话栏里每条的删除入口）
+  chevron: ['m9 6 6 6-6 6'],
 }
 
 /** 圆形子元素：各图标的中心圆 */
@@ -95,6 +101,8 @@ const circles: Record<IconName, Array<[number, number, number]>> = {
   paperclip: [],
   image: [[15.5, 8.5, 1.8]],
   compare: [],
+  menu: [],
+  chevron: [],
 }
 </script>
 
