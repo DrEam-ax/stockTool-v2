@@ -19,7 +19,7 @@ export function emptyProvider(): ModelProvider {
     supportsVision: false,
     supportsJson: true,
     temperature: 0.3,
-    maxTokens: 8192,
+    maxTokens: 16384,
     isDefault: false,
     createdAt: nowIso(),
   }
@@ -90,12 +90,12 @@ export function useProviders() {
     providers.value = (await db.getAll<ModelProvider>(db.STORES.providers)).sort(
       (a, b) => a.createdAt.localeCompare(b.createdAt),
     )
-    // 存量迁移：旧默认 maxTokens=2048 会把长回答截断（用户反馈「回答触发截断」）。
-    // 只升级「等于旧默认值」的配置（说明用户没自定义过），升到 8192；
+    // 存量迁移：旧默认 maxTokens=2048/8192 会把长回答截断（用户反馈「回答触发截断」）。
+    // 只升级「等于旧默认值」的配置（说明用户没自定义过），逐级升到 16384；
     // 用户自己填的其他值一律不动。
     for (const p of providers.value) {
-      if (p.maxTokens === 2048) {
-        p.maxTokens = 8192
+      if (p.maxTokens === 2048 || p.maxTokens === 8192) {
+        p.maxTokens = 16384
         await db.put(db.STORES.providers, p)
       }
     }

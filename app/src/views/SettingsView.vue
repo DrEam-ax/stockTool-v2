@@ -742,7 +742,7 @@ async function onDelete(p: ModelProvider) {
           <div class="field">
             <label>最大输出 tokens</label>
             <input v-model.number="editing.maxTokens" type="number" min="0" step="256" />
-            <div class="hint">填 0 = 不设限（由模型服务端决定）；默认 8192，长回答不会被提前截断。</div>
+            <div class="hint">填 0 = 不设限（由模型服务端决定）；默认 16384，工具多了、回答长了也不容易被提前截断。若你的模型输出上限低于此值（如 DeepSeek 上限 8192），在设置页调小或填 0。</div>
           </div>
         </div>
 
