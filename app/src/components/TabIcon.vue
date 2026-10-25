@@ -20,6 +20,7 @@ export type IconName =
   | 'compare'
   | 'menu'
   | 'chevron'
+  | 'close'
 
 withDefaults(
   defineProps<{ name: IconName; size?: number }>(),
@@ -86,6 +87,8 @@ const paths: Record<IconName, string[]> = {
   menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
   // 右箭头（会话栏里每条的删除入口）
   chevron: ['m9 6 6 6-6 6'],
+  // 叉号（删除入口）
+  close: ['M18 6 6 18', 'm6 6 12 12'],
 }
 
 /** 圆形子元素：各图标的中心圆 */
@@ -103,6 +106,7 @@ const circles: Record<IconName, Array<[number, number, number]>> = {
   compare: [],
   menu: [],
   chevron: [],
+  close: [],
 }
 </script>
 

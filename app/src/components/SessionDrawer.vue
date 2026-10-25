@@ -3,9 +3,11 @@
  * 会话栏（左侧抽屉）。
  *
  * 会话详情页左上角三横线打开：列出**所有**会话（标题 + 模式），
- * 点某一项进入该会话；每一项右侧的小箭头是删除入口，
- * 点击弹出确认框，确认后删除（删除当前正在看的会话会退回列表页）。
+ * 点某一项进入该会话；每一项右侧的叉号是删除入口，
+ * 点击弹出跟随主题色的圆角确认卡片，确认后删除
+ * （删除当前正在看的会话会退回列表页）。
  */
+import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import type { AdvisorMode, Session } from '@/types'
 import { useSessions } from '@/stores/sessions'
@@ -29,6 +31,9 @@ const MODES: Record<AdvisorMode, { icon: IconName; name: string }> = {
   research: { icon: 'kb', name: '研究历史观点' },
 }
 
+/** 待删除的会话：非空时显示确认卡片 */
+const delTarget = ref<Session | null>(null)
+
 function modeOf(s: Session): AdvisorMode {
   return s.mode ?? 'research'
 }
@@ -44,9 +49,15 @@ function openSession(s: Session) {
   router.push(`/s/${s.id}`)
 }
 
-async function onDelete(s: Session, e: Event) {
+function askDelete(s: Session, e: Event) {
   e.stopPropagation()
-  if (!confirm(`删除会话「${s.title}」？删除后对话记录无法恢复。`)) return
+  delTarget.value = s
+}
+
+async function doDelete() {
+  const s = delTarget.value
+  if (!s) return
+  delTarget.value = null
   await sessions.remove(s.id)
   // 删的正是当前正在看的会话 → 退回会话列表，避免落到不存在的页面
   if (s.id === route.params.id) router.replace('/')
@@ -89,15 +100,15 @@ async function onDelete(s: Session, e: Event) {
                     <TabIcon name="kb" :size="12" />
                     {{ kbNames(s)[0] }}
                   </span>
-                  <span class="muted small">{{ relTime(s.updatedAt) }}</span>
                 </div>
+                <div class="drawer-item-time">{{ relTime(s.updatedAt) }}</div>
               </div>
               <button
                 class="drawer-del"
                 :aria-label="`删除会话 ${s.title}`"
-                @click="onDelete(s, $event)"
+                @click="askDelete(s, $event)"
               >
-                <TabIcon name="chevron" :size="16" />
+                <TabIcon name="close" :size="15" />
               </button>
             </div>
           </div>
@@ -108,6 +119,23 @@ async function onDelete(s: Session, e: Event) {
             </button>
           </div>
         </aside>
+      </div>
+    </Transition>
+
+    <!-- 删除确认：跟随主题色的圆角卡片 -->
+    <Transition name="fade">
+      <div v-if="delTarget" class="confirm-mask" @click.self="delTarget = null">
+        <div class="confirm-card" role="alertdialog" aria-label="删除会话">
+          <div class="confirm-title">删除会话</div>
+          <div class="confirm-text">
+            删除「{{ delTarget.title }}」？<br />
+            删除后对话记录无法恢复。
+          </div>
+          <div class="confirm-actions">
+            <button class="btn" @click="delTarget = null">取消</button>
+            <button class="btn danger" @click="doDelete">删除</button>
+          </div>
+        </div>
       </div>
     </Transition>
   </Teleport>

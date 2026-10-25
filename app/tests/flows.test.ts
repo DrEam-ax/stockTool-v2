@@ -553,31 +553,37 @@ describe('会话详情：能打字就必须能发送', () => {
       }
     })
 
-    it('右侧小箭头确认后删除会话（非当前会话不跳转）', async () => {
+    it('右侧叉号弹出确认卡片，确认后删除会话（非当前会话不跳转）', async () => {
       const ctx = await mountWithDrawer()
-      const spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
       try {
         await openDrawer(ctx)
         const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
           el.textContent!.includes('第二场'),
         )
+        // 每个会话框都有一行独立的时间（不与 chips 挤行）
+        expect(target!.querySelector('.drawer-item-time')).toBeTruthy()
         const delBtn = target!.querySelector('.drawer-del') as HTMLElement
         delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await nextTick()
+        // 弹出跟随主题色的圆角确认卡片
+        const card = document.querySelector('.confirm-card') as HTMLElement
+        expect(card).toBeTruthy()
+        expect(card.textContent).toContain('第二场')
+        // 点「删除」确认
+        const okBtn = [...card.querySelectorAll('button')].find((b) => b.textContent!.includes('删除'))
+        okBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await flushPromises()
         await nextTick()
-        expect(spy).toHaveBeenCalled()
         expect(useSessions().sessions.value.find((x) => x.id === ctx.s2.id)).toBeFalsy()
         // 当前会话没被删，不跳转
         expect(ctx.router.currentRoute.value.path).toBe(`/s/${ctx.s1.id}`)
       } finally {
-        spy.mockRestore()
         ctx.w.unmount()
       }
     })
 
     it('删除的是当前正在看的会话时退回列表', async () => {
       const ctx = await mountWithDrawer()
-      const spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
       try {
         await openDrawer(ctx)
         const target = [...document.querySelectorAll('.drawer-item')].find((el) =>
@@ -585,12 +591,15 @@ describe('会话详情：能打字就必须能发送', () => {
         )
         const delBtn = target!.querySelector('.drawer-del') as HTMLElement
         delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await nextTick()
+        const card = document.querySelector('.confirm-card') as HTMLElement
+        const okBtn = [...card.querySelectorAll('button')].find((b) => b.textContent!.includes('删除'))
+        okBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await flushPromises()
         await nextTick()
-        expect(spy).toHaveBeenCalled()
+        expect(useSessions().sessions.value.find((x) => x.id === ctx.s1.id)).toBeFalsy()
         expect(ctx.router.currentRoute.value.path).toBe('/')
       } finally {
-        spy.mockRestore()
         ctx.w.unmount()
       }
     })

@@ -1444,6 +1444,9 @@ html.kbd-open .page-full {
   z-index: 80;
   /* 抽屉打开时，遮罩上的滑动不再链到背景页面（防滚动穿透） */
   overscroll-behavior: contain;
+  /* 右侧露出的下层界面做模糊处理 */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .drawer {
@@ -1465,7 +1468,7 @@ html.kbd-open .page-full {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 14px 14px 10px;
+  padding: calc(14px + var(--safe-t)) 14px 10px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -1528,6 +1531,13 @@ html.kbd-open .page-full {
   padding: 1px 7px;
 }
 
+/* 时间统一新起一行，不与 chips 挤在同一行 */
+.drawer-item-time {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--fg-mute);
+}
+
 .drawer-del {
   flex: none;
   width: 30px;
@@ -1571,4 +1581,73 @@ html.kbd-open .page-full {
 .drawer-enter-from .drawer,
 .drawer-leave-to .drawer {
   transform: translateX(-100%);
+}
+
+/* ============ 删除确认卡片（跟随主题色的圆角弹窗） ============ */
+.confirm-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--mask);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overscroll-behavior: contain;
+}
+
+.confirm-card {
+  width: min(78vw, 300px);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 20px 18px 16px;
+  text-align: center;
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.confirm-text {
+  font-size: 13px;
+  color: var(--fg-dim);
+  line-height: 1.7;
+  margin-bottom: 18px;
+  word-break: break-all;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-actions .btn {
+  flex: 1;
+}
+
+/* 危险按钮：主题色底、按下加深（删除是高频又不可逆的动作，要醒目） */
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.btn.danger:active {
+  opacity: 0.85;
+}
+
+/* 卡片淡入淡出 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
 }
