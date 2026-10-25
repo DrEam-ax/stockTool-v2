@@ -742,6 +742,7 @@ async function onDelete(p: ModelProvider) {
           <div class="field">
             <label>最大输出 tokens</label>
             <input v-model.number="editing.maxTokens" type="number" min="0" step="256" />
+            <div class="hint">填 0 = 不设限（由模型服务端决定）；默认 8192，长回答不会被提前截断。</div>
           </div>
         </div>
 
