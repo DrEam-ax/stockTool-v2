@@ -112,17 +112,22 @@ function onPickCompare() {
 }
 
 /**
- * 对比请教的消息展示：一条 parallel 消息里有军师/专业分析两套回答，
- * 只渲染 active 一侧；右侧浮动按钮（可拖动）点击切换。
+ * 对比请教的消息展示：一条 parallel 消息里有军师/专业分析两套回答。
+ *
+ * 切换是**全局视角**：`compareView` 决定所有对比消息当前显示哪一侧，
+ * 切换按钮只改这一个 ref（零遍历、零负担），上翻历史时每一轮对比
+ * 都只看到同一种回答（全军师 或 全专业分析），不会一条一条混着来。
+ * 消息数据里的 `m.parallel.active` 是生成时的默认值，渲染时不参与判断。
  */
+const compareView = ref<'advisor' | 'analyst'>('advisor')
+
 function activeSide(m: ChatMessage) {
   if (!m.parallel) return null
-  return m.parallel.active === 'analyst' ? m.parallel.analyst : m.parallel.advisor
+  return compareView.value === 'analyst' ? m.parallel.analyst : m.parallel.advisor
 }
 
-function flipParallel(m: ChatMessage) {
-  if (!m.parallel) return
-  m.parallel.active = m.parallel.active === 'advisor' ? 'analyst' : 'advisor'
+function flipCompareView() {
+  compareView.value = compareView.value === 'advisor' ? 'analyst' : 'advisor'
 }
 
 /** 当前激活侧的、已展开详情的工具记录 */
@@ -137,10 +142,30 @@ const showCmpSwitch = computed(() => {
   return Boolean(last?.parallel)
 })
 
-function flipLastParallel() {
-  const s = session.value
-  const last = s?.messages[s.messages.length - 1]
-  if (last) flipParallel(last)
+/**
+ * 对比消息分页：默认只渲染最近 5 条对比回复（防止超长会话里
+ * 历史对比消息拖慢渲染/滚动），更早的折叠，点「加载更多」逐批展开。
+ */
+const PARALLEL_PAGE = 5
+const parallelLimit = ref(PARALLEL_PAGE)
+
+const parallelCtx = computed(() => {
+  const msgs = session.value?.messages ?? []
+  const pIdx: number[] = []
+  msgs.forEach((m, i) => {
+    if (m.parallel) pIdx.push(i)
+  })
+  const visible = pIdx.slice(-parallelLimit.value)
+  return {
+    msgs,
+    visibleSet: new Set(visible),
+    firstVisibleIdx: visible[0] ?? -1,
+    hidden: pIdx.length - visible.length,
+  }
+})
+
+function loadMoreParallel() {
+  parallelLimit.value += PARALLEL_PAGE
 }
 
 /** 切换按钮的拖动状态（fixed 定位 + translate 偏移） */
@@ -573,12 +598,21 @@ const memoryHint = computed(() => {
           </span>
         </div>
 
-        <div
-          v-for="m in session.messages"
-          :key="m.id"
-          class="msg"
-          :class="m.role === 'user' ? 'user' : 'assistant'"
-        >
+        <!-- 对比消息按页折叠：最近 5 条直接渲染，更早在「加载更多」里 -->
+        <template v-for="(m, i) in parallelCtx.msgs" :key="m.id">
+          <div
+            v-if="m.parallel && i === parallelCtx.firstVisibleIdx && parallelCtx.hidden > 0"
+            class="load-more-wrap"
+          >
+            <button class="load-more" @click="loadMoreParallel">
+              加载更多对比回答（还有 {{ parallelCtx.hidden }} 条）
+            </button>
+          </div>
+          <div
+            v-if="!m.parallel || parallelCtx.visibleSet.has(i)"
+            class="msg"
+            :class="m.role === 'user' ? 'user' : 'assistant'"
+          >
           <div v-if="m.images?.length" class="msg-imgs">
             <img v-for="(src, i) in m.images" :key="i" :src="src" alt="附图" />
           </div>
@@ -622,17 +656,17 @@ const memoryHint = computed(() => {
             class="bubble"
             :class="{ error: Boolean(m.parallel ? activeSide(m)?.error : m.error) }"
           >
-            <!-- 对比请教：只显示当前激活的一侧（军师/专业分析），
-                 右侧浮动按钮或标题点击切换 -->
+            <!-- 对比请教：显示全局当前侧（军师/专业分析），
+                 标题或右侧浮动按钮点击切换全部对比消息 -->
             <template v-if="m.parallel">
               <div class="cmp-side">
-                <div class="cmp-tag" @click="flipParallel(m)">
+                <div class="cmp-tag" @click="flipCompareView">
                   <TabIcon
-                    :name="m.parallel.active === 'advisor' ? 'person' : 'compare'"
+                    :name="compareView === 'advisor' ? 'person' : 'compare'"
                     :size="12"
                   />
-                  {{ m.parallel.active === 'advisor' ? '军师观点' : '专业分析' }}
-                  <span class="cmp-flip">⇄ 看另一套</span>
+                  {{ compareView === 'advisor' ? '军师观点' : '专业分析' }}
+                  <span class="cmp-flip">⇄ 切换全部</span>
                 </div>
 
                 <div v-if="activeSide(m)?.toolCalls?.length" class="tool-trail">
@@ -733,7 +767,8 @@ const memoryHint = computed(() => {
               </span>
             </template>
           </div>
-        </div>
+          </div>
+        </template>
       </div>
 
       <!-- 输入区 -->
@@ -887,7 +922,7 @@ const memoryHint = computed(() => {
       class="cmp-switch"
       :style="{ transform: `translate(${switchX}px, ${switchY}px)` }"
       aria-label="切换对比回答"
-      @click="!dragMoved && flipLastParallel()"
+      @click="!dragMoved && flipCompareView()"
       @pointerdown="dragStart"
       @pointermove="dragMove"
       @pointerup="dragEnd"

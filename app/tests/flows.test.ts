@@ -792,7 +792,7 @@ describe('会话详情：能打字就必须能发送', () => {
       expect(w.find('.compare-banner').exists()).toBe(false)
     })
 
-    it('对比消息渲染当前激活侧，右侧按钮可切换军师/专业分析', async () => {
+    it('切换按钮切的是全局视角：所有对比消息一起切换，数据层默认值不变', async () => {
       const w = await mountSession()
       await w.find('button[aria-label="工具栏"]').trigger('click')
       await nextTick()
@@ -814,17 +814,91 @@ describe('会话详情：能打字就必须能发送', () => {
       const sw = document.querySelector('.cmp-switch') as HTMLElement
       expect(sw).toBeTruthy()
 
-      // 点击切换 → 显示专业分析
+      // 点击切换 → 全局切到专业分析
       sw.click()
       await nextTick()
-      const msgs = useSessions().sessions.value[0].messages
-      expect(msgs[msgs.length - 1].parallel!.active).toBe('analyst')
       expect(w.text()).toContain('专业分析')
 
       // 再点切回军师
       sw.click()
       await nextTick()
+      expect(w.text()).toContain('军师观点')
+
+      // 全局切换只改视图，不改消息数据层默认值（active 仍是生成时的 advisor）
+      const msgs = useSessions().sessions.value[0].messages
       expect(msgs[msgs.length - 1].parallel!.active).toBe('advisor')
+    })
+
+    it('全局切换覆盖所有对比消息：上翻历史只看到同一种回答', async () => {
+      const w = await mountSession()
+      // 直接往会话里塞 3 条对比消息（模拟历史对比）
+      const s = useSessions().sessions.value[0]
+      const makeParallel = (tag: string) => ({
+        id: `p_${tag}`,
+        role: 'assistant' as const,
+        content: '',
+        createdAt: new Date().toISOString(),
+        pending: false,
+        parallel: {
+          advisor: { content: `军师-${tag}` },
+          analyst: { content: `分析-${tag}` },
+          active: 'advisor' as const,
+        },
+      })
+      s.messages.push(makeParallel('第一条'), makeParallel('第二条'), makeParallel('第三条'))
+      await nextTick()
+
+      // 默认全部显示军师侧
+      expect(w.text()).toContain('军师-第一条')
+      expect(w.text()).toContain('军师-第三条')
+      expect(w.text()).not.toContain('分析-第一条')
+
+      // 切换按钮 → 全部变专业分析（不是只切最新一条）
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      sw.click()
+      await nextTick()
+      expect(w.text()).toContain('分析-第一条')
+      expect(w.text()).toContain('分析-第三条')
+      expect(w.text()).not.toContain('军师-第一条')
+    })
+
+    it('对比消息分页：默认只显示最近 5 条，更早的折叠在「加载更多」', async () => {
+      const w = await mountSession()
+      const s = useSessions().sessions.value[0]
+      const makeParallel = (tag: string) => ({
+        id: `p_${tag}`,
+        role: 'assistant' as const,
+        content: '',
+        createdAt: new Date().toISOString(),
+        pending: false,
+        parallel: {
+          advisor: { content: `军师-${tag}` },
+          analyst: { content: `分析-${tag}` },
+          active: 'advisor' as const,
+        },
+      })
+      // 6 条对比消息（超过默认页大小 5）
+      for (let i = 1; i <= 6; i++) s.messages.push(makeParallel(`第${i}条`))
+      await nextTick()
+
+      // 最近 5 条可见（第2~6条），第 1 条折叠，出现加载更多
+      expect(w.text()).toContain('军师-第6条')
+      expect(w.text()).toContain('军师-第2条')
+      expect(w.text()).not.toContain('军师-第1条')
+      expect(w.text()).toContain('加载更多对比回答（还有 1 条）')
+
+      // 点击加载更多 → 第 1 条出现，按钮消失
+      await w.find('.load-more').trigger('click')
+      await nextTick()
+      expect(w.text()).toContain('军师-第1条')
+      expect(w.find('.load-more').exists()).toBe(false)
+
+      // 全局切换在分页展开后仍然作用于全部
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      sw.click()
+      await nextTick()
+      expect(w.text()).toContain('分析-第1条')
+      expect(w.text()).not.toContain('军师-第6条')
     })
 
     it('切换按钮可拖动：pointer 拖动后位置变化', async () => {

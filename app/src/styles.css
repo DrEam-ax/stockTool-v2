@@ -1095,6 +1095,27 @@ textarea {
   gap: 6px;
 }
 
+/* 历史对比消息分页：加载更多 */
+.load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+}
+
+.load-more {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.load-more:active {
+  background: var(--bg-3);
+}
+
 .cmp-tag {
   display: inline-flex;
   align-items: center;
