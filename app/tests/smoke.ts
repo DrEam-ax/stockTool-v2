@@ -253,8 +253,8 @@ async function main() {
     activeTools(ctx2).some((t) => t.name === 'stock_announcements'))
 
   check(
-    '工具总数符合预期（3 知识库 + 2 行情 + 3 联网 + 1 核对持仓）',
-    ALL_TOOLS.length === 9,
+    '工具总数符合预期（3 知识库 + 3 行情 + 3 联网 + 1 核对持仓）',
+    ALL_TOOLS.length === 10,
     String(ALL_TOOLS.length),
   )
 

@@ -94,7 +94,32 @@ function closeComposerFs() {
 /** 全屏输入框：组合态下 v-model 可能没同步，DOM 兜底拉回（与折叠框同一策略） */
 function onFsInput() {
   const el = fsEl.value
-  if (el && el.value !== input.value) input.value = el.value
+  if (!el) return
+  const caret = snapshotCaret(el)
+  if (el.value !== input.value) input.value = el.value
+  restoreAfterRender(el, caret)
+}
+
+/**
+ * 光标护栏（两个输入框共用）。
+ *
+ * 为什么需要这层：真机反馈「把光标移到中间再打字，字还是出现在末尾」。
+ * 任何一次 `el.value = ...` 重新赋值都会把光标甩到末尾，而
+ * Vue 的 `v-model` 在中文输入法组合态下会用自己的过期状态覆盖 DOM。
+ *
+ * 历史上已经为这条堵过三次（禁用按钮、watch 兜底、compositionend），
+ * 每次换机型又冒出来。所以改成**不依赖成因的兜底**：
+ * 动手前记住光标，等 Vue 重渲染完再还回去。
+ */
+function snapshotCaret(el: HTMLTextAreaElement | null): Caret | null {
+  if (!el) return null
+  // 没聚焦就没有"用户的光标"可言，别记
+  return document.activeElement === el ? readCaret(el) : null
+}
+
+function restoreAfterRender(el: HTMLTextAreaElement | null, caret: Caret | null): void {
+  if (!el || !caret) return
+  void nextTick().then(() => restoreCaret(el, caret))
 }
 
 /**
@@ -307,9 +332,11 @@ watch(
  */
 watch(input, async () => {
   await nextTick()
-  resizeComposer()
-  // 行数变化影响「≥3 行显示展开按钮」；field-sizing 下重排有延迟，
-  // 等一帧再算一次（与 onComposerInput 的兜底同思路）
+  // 这里**不要**立刻 resizeComposer：每次按键都会触发这个 watch，
+  // 立刻改高度＝每按一键重排一次，正是「光标乱跳到末尾」的成因。
+  // 高度统一由 onComposerInput（停顿后）和 onCompositionEnd（上屏后）调度；
+  // 发送清空由 onSend 自己调 resizeComposer。
+  // 行数变化影响「≥3 行显示展开按钮」，这步只读 scrollHeight、不改布局。
   updateExpandBtn()
   requestAnimationFrame(updateExpandBtn)
 })
@@ -352,20 +379,35 @@ async function scrollToBottom() {
  * 而且 `v-model` 在组合态是故意不更新状态的，所以靠 watch 也兜不住。
  */
 function onComposerInput() {
-  // 组合态下 v-model 可能没同步，这里先把 DOM 的真实内容拉回状态。
-  // 否则后面任何一次重渲染（点个开关、换个知识库）都可能用空状态覆盖掉 DOM，
-  // 用户刚打的字就没了 —— 真机上「点联网开关文字消失」正是这个机制。
   const el = taEl.value
-  if (el && el.value !== input.value) input.value = el.value
-  resizeComposer()
+  if (!el) return
+  // 1) 先记住光标 —— 此刻它还是用户在文本里的真实位置
+  const caret = snapshotCaret(el)
+  // 2) 组合态下 v-model 可能没同步，把 DOM 的真实内容拉回状态。
+  //    否则后面任何一次重渲染都可能用空状态覆盖掉 DOM，
+  //    用户刚打的字就没了 —— 真机上「点联网开关文字消失」正是这个机制。
+  if (el.value !== input.value) input.value = el.value
   updateExpandBtn()
-  // 组合态下的补算：等浏览器重排完成。两层兜底 ——
-  //   rAF：正常情况下重排后的第一帧
-  //   setTimeout(0)：某些 WebView 的组合态结束后还会晚一拍才更新 scrollHeight
-  requestAnimationFrame(resizeComposer)
-  requestAnimationFrame(updateExpandBtn)
-  setTimeout(resizeComposer, 0)
-  setTimeout(updateExpandBtn, 0)
+  // 3) 打字过程中**不动布局**，等停顿后再算高度（见 scheduleResize）
+  if (!composing) scheduleResize(350)
+  // 4) 等 Vue 重渲染完，把光标还回原位（「把光标移到中间、字却跑到末尾」的兜底）
+  restoreAfterRender(el, caret)
+}
+
+/** 输入法开始组合（拼音还没上屏）：立刻停掉所有布局调整 */
+function onCompositionStart() {
+  composing = true
+  cancelPendingResize()
+}
+
+/**
+ * 输入法上屏：这是调整高度最安全的时机 —— 组合已经结束，
+ * 重排不会再打断输入法的光标定位。
+ */
+function onCompositionEnd() {
+  composing = false
+  onComposerInput()
+  scheduleResize(0)
 }
 
 /** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
@@ -388,7 +430,7 @@ const COMPOSER_MAX_H = 130
  * 输入框高度由浏览器自己按内容撑开，**JS 不需要也不应该再碰 height**。
  * 判定逻辑见 `lib/composer.ts`（抽成纯函数便于单测防回归）。
  */
-import { HAS_FIELD_SIZING } from '@/lib/composer'
+import { HAS_FIELD_SIZING, readCaret, restoreCaret, type Caret } from '@/lib/composer'
 
 /**
  * 输入框随内容变高，并保证光标行留在可视区内。
@@ -409,9 +451,10 @@ import { HAS_FIELD_SIZING } from '@/lib/composer'
 function resizeComposer() {
   const el = taEl.value
   if (!el) return
-  // 原生 field-sizing 已接管高度：JS 收手，避免每次 input/定时器强制重排
-  // 打断输入法光标定位（见 HAS_FIELD_SIZING 注释）
+  // 原生 field-sizing 已接管高度：JS 收手，避免强制重排打断输入法光标定位
   if (HAS_FIELD_SIZING) return
+  // 组合态里绝不碰布局 —— 见下面 scheduleResize 的说明
+  if (composing) return
   el.style.height = 'auto'
   // border-box 下 height 不含边框，用差值补回来（比读 computedStyle 简单可靠）
   const border = Math.max(0, el.offsetHeight - el.clientHeight)
@@ -422,40 +465,52 @@ function resizeComposer() {
 }
 
 /**
- * 聚焦期间每 150ms 校验一次高度 —— 这一层**完全不依赖事件**。
+ * 是否处于输入法组合态（拼音还没上屏）。
  *
- * 为什么还要它：真机上出现过「打字不变高、退格就正常」，
- * 说明中文输入法组合态下的 input / compositionend 时机在各家 WebView 上靠不住，
- * rAF / setTimeout 也救不回来（可能都跑在重排之前）。
- * 定时校验一到位，无论事件是否被吞、重排何时完成，
- * 最迟 150ms 内框子都会长到正确高度。失焦立即停，不占后台资源。
+ * 为什么要单独跟踪：`input` 事件在组合态里也会触发，
+ * 但此时去改 `height` 会引起重排。真机上「把光标移到中间、字却跑到末尾」
+ * 就是这种重排打断输入法光标定位造成的 —— 所以组合态里一律不动布局。
  */
-let composerTimer: number | null = null
-let lastComposerH = -1
+let composing = false
 
-function startComposerWatch() {
-  // 原生 field-sizing 已接管高度，不再需要定时轮询 —— 轮询的
-  // `height='auto'` 重排正是真机上输入法光标被顶到末尾的元凶
+/**
+ * 高度调整改成**延迟执行**，而不是每次按键都算。
+ *
+ * 为什么：原来每次 input 立刻 `height='auto'`（还有一层 150ms 轮询），
+ * 在中文输入法组合态下会不停重排，输入法的光标定位被反复打断，
+ * 表现为「移到中间打字，字还是出现在末尾」。
+ * 现在只在两种安全时机算高度：
+ *   1. 输入法上屏之后（compositionend）
+ *   2. 停止打字 350ms 之后（普通输入 / 粘贴）
+ * 代价是框子长高会略有延迟，换来的是光标不再乱跳。
+ */
+let resizeTimer: number | null = null
+
+function scheduleResize(delay: number) {
   if (HAS_FIELD_SIZING) return
-  if (composerTimer != null) return
-  composerTimer = window.setInterval(() => {
-    const el = taEl.value
-    if (!el || document.activeElement !== el) return
-    el.style.height = 'auto'
-    const border = Math.max(0, el.offsetHeight - el.clientHeight)
-    const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
-    if (h === lastComposerH) return // 高度没变就不动，避免无谓重排
-    lastComposerH = h
-    el.style.height = `${h}px`
-  }, 150)
+  if (resizeTimer != null) clearTimeout(resizeTimer)
+  resizeTimer = window.setTimeout(() => {
+    resizeTimer = null
+    resizeComposer()
+  }, delay)
 }
 
-function stopComposerWatch() {
-  if (composerTimer != null) {
-    clearInterval(composerTimer)
-    composerTimer = null
-    lastComposerH = -1
+function cancelPendingResize() {
+  if (resizeTimer != null) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
   }
+}
+
+/** 输入框获得焦点：先按当前内容对一次高度（用户可能刚切回来） */
+function startComposerWatch() {
+  scheduleResize(0)
+}
+
+/** 失焦：取消待执行的调整，并按最终内容对一次 */
+function stopComposerWatch() {
+  cancelPendingResize()
+  scheduleResize(0)
 }
 
 /**
@@ -471,11 +526,14 @@ function stopComposerWatch() {
 function onComposerBlur() {
   const el = taEl.value
   if (el && el.value !== input.value) input.value = el.value
+  // 万一 compositionend 没触发（部分输入法在失焦时直接收起键盘），
+  // 这里把组合态清掉，否则高度调整会一直被挡住
+  composing = false
   stopComposerWatch()
 }
 
-// 离开会话页时把定时器收掉，别在后台空转
-onUnmounted(stopComposerWatch)
+// 离开会话页时把待执行的调整取消掉，别在后台空转
+onUnmounted(cancelPendingResize)
 onUnmounted(clearDockTimer)
 
 async function onAttach(e: Event) {
@@ -943,7 +1001,8 @@ const memoryHint = computed(() => {
               rows="1"
               @keydown="onKeydown"
               @input="onComposerInput"
-              @compositionend="onComposerInput"
+              @compositionstart="onCompositionStart"
+              @compositionend="onCompositionEnd"
               @focus="startComposerWatch"
               @blur="onComposerBlur"
             />

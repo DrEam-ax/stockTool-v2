@@ -708,12 +708,20 @@ describe('会话详情：能打字就必须能发送', () => {
     Object.defineProperty(el, 'scrollHeight', { value: h, configurable: true })
   }
 
-  it('按 scrollHeight 计算高度（仅代码路径）', async () => {
+  /** 等到延迟重算真的跑了（scheduleResize 默认 350ms，留足余量） */
+  const waitResize = () => new Promise((r) => setTimeout(r, 420))
+
+  it('打字停顿后才按 scrollHeight 算高度（仅代码路径）', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
-    stubScrollHeight(ta.element as HTMLTextAreaElement, 96)
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 96)
     await ta.trigger('input')
-    expect((ta.element as HTMLTextAreaElement).style.height).toBe('96px')
+    // 打字过程中**不改高度** —— 这是光标不乱跳的前提
+    // （不能用 toBe('')：挂载时可能已按 jsdom 的 scrollHeight=0 写过 '0px'）
+    expect(el.style.height).not.toBe('96px')
+    await waitResize()
+    expect(el.style.height).toBe('96px')
   })
 
   it('高度封顶 130px（仅代码路径）', async () => {
@@ -721,6 +729,7 @@ describe('会话详情：能打字就必须能发送', () => {
     const ta = w.find('textarea')
     stubScrollHeight(ta.element as HTMLTextAreaElement, 600)
     await ta.trigger('input')
+    await waitResize()
     expect((ta.element as HTMLTextAreaElement).style.height).toBe('130px')
   })
 
@@ -735,6 +744,7 @@ describe('会话详情：能打字就必须能发送', () => {
     const el = ta.element as HTMLTextAreaElement
     stubScrollHeight(el, 96)
     await ta.trigger('input')
+    await waitResize()
     // 高度按内容算，但 scrollTop 不被程序改写成 scrollHeight
     expect(el.style.height).toBe('96px')
     expect(el.scrollTop).not.toBe(96)
@@ -747,6 +757,7 @@ describe('会话详情：能打字就必须能发送', () => {
     stubScrollHeight(el, 96)
     await ta.setValue('发一条测试')
     await ta.trigger('input')
+    await waitResize()
     expect(el.style.height).toBe('96px')
 
     stubScrollHeight(el, 40)
@@ -754,73 +765,88 @@ describe('会话详情：能打字就必须能发送', () => {
     await btn!.trigger('click')
     await flushPromises()
     await nextTick()
+    await waitResize()
     expect(el.style.height).toBe('40px')
   })
 
   /**
-   * 中文输入法的组合态问题（真机才暴露）：
-   *   打字时文字处于组合态，Android WebView 会推迟重排，
-   *   此刻 scrollHeight 还是旧值 → 框子不变高；
-   *   退格不是组合态 → 立即重排 → 正常。
-   * 所以 `compositionend` 必须也触发重算。
+   * ⭐ 核心回归：组合态（拼音还没上屏）期间**绝不能动布局**。
+   *
+   * 用户反馈「把光标移到内容中间，打字还是出现在末尾」。
+   * 根因是打字过程中反复 `height='auto'` 重排，打断了输入法对光标的定位
+   * （旧实现还有一层 150ms 轮询，等于每 150ms 重排一次）。
+   * 所以组合态里所有高度调整都要停手，上屏后再算。
    */
-  it('输入法组合结束会重算高度', async () => {
+  it('输入法组合态期间不调整高度', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    stubScrollHeight(el, 96)
+
+    await ta.trigger('compositionstart')
+    await ta.trigger('input') // 组合态里每按一个键都会触发 input
+    await waitResize()
+    expect(el.style.height).not.toBe('96px')
+  })
+
+  it('输入法上屏（compositionend）后才调整高度', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
     stubScrollHeight(el, 84)
+
+    await ta.trigger('compositionstart')
+    await ta.trigger('input')
+    expect(el.style.height).not.toBe('84px')
+
     await ta.trigger('compositionend')
+    await waitResize()
     expect(el.style.height).toBe('84px')
   })
 
-  it('input 之后下一帧会再算一次（兜住组合态的重排推迟）', async () => {
+  it('聚焦时按当前内容对一次高度', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
-    stubScrollHeight(el, 50)
-    await ta.trigger('input')
-    expect(el.style.height).toBe('50px')
-
-    // 模拟「事件当帧读到旧值、重排完成后变高」
-    stubScrollHeight(el, 78)
-    await new Promise<void>((r) => requestAnimationFrame(() => r()))
-    expect(el.style.height).toBe('78px')
+    el.focus()
+    stubScrollHeight(el, 64)
+    await ta.trigger('focus')
+    await waitResize()
+    expect(el.style.height).toBe('64px')
   })
 
   /**
-   * 真机上「打字不变高、退格就正常」用事件层无论如何救不回来，
-   * 所以加了一层不依赖事件的定时校验：聚焦期间每 150ms 检查一次高度。
+   * ⭐ 核心回归：光标移到中间后打字，光标不能被甩到末尾。
+   *
+   * 任何一次 `el.value = ...` 重新赋值都会把光标移到末尾，
+   * 而 Vue 的 v-model 在组合态失同步时会这么干。
+   * 护栏：input 时记下光标，等重渲染完再还回去。
    */
-  it('聚焦期间定时校验高度（完全不依赖事件）', async () => {
-    const w = await mountSession()
-    const ta = w.find('textarea')
-    const el = ta.element as HTMLTextAreaElement
-
-    // 让 document.activeElement 指向它，否则定时器会跳过
-    el.focus()
-    await ta.trigger('focus')
-    expect(document.activeElement).toBe(el)
-
-    // 只改 scrollHeight，**不派发任何事件**
-    stubScrollHeight(el, 84)
-    await new Promise((r) => setTimeout(r, 220))
-    expect(el.style.height).toBe('84px')
-
-    await ta.trigger('blur')
-  })
-
-  it('失焦后停止校验，不再改动高度', async () => {
+  it('光标在中间时输入，位置不会被甩到末尾', async () => {
     const w = await mountSession()
     const ta = w.find('textarea')
     const el = ta.element as HTMLTextAreaElement
     el.focus()
     await ta.trigger('focus')
-    await ta.trigger('blur')
-    el.blur()
 
-    stubScrollHeight(el, 96)
-    await new Promise((r) => setTimeout(r, 220))
-    expect(el.style.height).not.toBe('96px')
+    el.value = 'abcdef'
+    await ta.trigger('input')
+    await flushPromises()
+
+    // 用户把光标移到中间（第 3 个字符后）
+    el.setSelectionRange(3, 3)
+    expect(el.selectionStart).toBe(3)
+
+    // 模拟在中间插入一个字符
+    el.value = 'abcXdef'
+    el.setSelectionRange(4, 4)
+    await ta.trigger('input')
+    await flushPromises()
+    await nextTick()
+
+    // 光标仍在插入点之后，而不是被甩到末尾（7）
+    expect(el.selectionStart).toBe(4)
+    expect(el.selectionEnd).toBe(4)
   })
 
   /**
