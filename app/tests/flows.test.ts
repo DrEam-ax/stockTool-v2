@@ -884,6 +884,41 @@ describe('会话详情：能打字就必须能发送', () => {
   })
 
   /**
+   * ⭐ 非受控模式的核心回归：textarea 不带 value 绑定（无 v-model），
+   * 组件重渲染**不得**重写 textarea 的 value / 光标。
+   *
+   * 用户四次反馈「光标移到中间、字仍落末尾」的根本怀疑点：
+   * Vue 一旦给 textarea 绑 value，任何重渲染都可能 `el.value = state`
+   * 写回 DOM，而写回 value（即使同值，部分 WebView）会把光标甩到末尾。
+   * 这条测试钉死：点开关触发整组件重渲染后，DOM value 与光标都原样。
+   */
+  it('组件重渲染不重写 textarea 的 value 和光标（非受控）', async () => {
+    const w = await mountSession()
+    const ta = w.find('textarea')
+    const el = ta.element as HTMLTextAreaElement
+    el.focus()
+    await ta.trigger('focus')
+
+    // 用户输入到「中间插入」状态：内容 6 字，光标在第 3 字后
+    el.value = 'abcdef'
+    await ta.trigger('input')
+    await flushPromises()
+    el.setSelectionRange(3, 3)
+    expect(el.selectionStart).toBe(3)
+
+    // 触发整组件重渲染（点「允许联网」开关 → 状态变 → 全组件 patch）
+    const chip = w.findAll('.chip.pick').find((c) => c.text().includes('联网'))
+    await chip!.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // 重渲染后：值没被冲掉、光标没被甩到末尾
+    expect(el.value).toBe('abcdef')
+    expect(el.selectionStart).toBe(3)
+    expect(el.selectionEnd).toBe(3)
+  })
+
+  /**
    * 真机上真正的成因：中文输入法组合态里 v-model 不会更新状态，
    * 此时点任何开关都会让输入框失焦 + 触发重渲染，
    * Vue 的 v-model 指令发现「DOM 值 ≠ 状态值」就把 DOM 覆盖成空 —— 文字就没了。

@@ -91,19 +91,24 @@ function updateExpandBtn() {
 
 function openComposerFs() {
   composerFs.value = true
-  // 等全屏层挂好再聚焦，输入法会直接顶起
-  nextTick(() => fsEl.value?.focus())
+  // 等全屏层挂好：先把折叠框的内容搬进全屏框（非受控，必须手动搬），再聚焦
+  nextTick(() => {
+    if (fsEl.value) fsEl.value.value = input.value
+    fsEl.value?.focus()
+  })
 }
 
 function closeComposerFs() {
   composerFs.value = false
   nextTick(() => {
+    // 全屏框内容搬回折叠框（非受控，必须手动搬）
+    if (taEl.value) taEl.value.value = input.value
     taEl.value?.focus()
     updateExpandBtn()
   })
 }
 
-/** 全屏输入框：组合态下 v-model 可能没同步，DOM 兜底拉回（与折叠框同一策略） */
+/** 全屏输入框（非受控）：把 DOM 值同步进影子状态，组合态里不动（见 onComposerInput） */
 function onFsInput() {
   const el = fsEl.value
   if (!el) return
@@ -112,6 +117,15 @@ function onFsInput() {
   const caret = snapshotCaret(el)
   if (el.value !== input.value) input.value = el.value
   restoreAfterRender(el, caret)
+}
+
+/** 全屏框失焦：非组合态把最新文本收进影子状态；组合态残渣不进状态 */
+function onFsBlur() {
+  const el = fsEl.value
+  if (el && !(composing || inImeComposition(el)) && el.value !== input.value) {
+    input.value = el.value
+  }
+  composing = false
 }
 
 /**
@@ -338,19 +352,15 @@ watch(
 )
 
 /**
- * 双保险：不依赖 `@input` 事件一定触发。
+ * 影子状态变化时重算展开按钮。
  *
- * 某些输入法/机型下输入事件可能被吞（发送按钮那次就是栽在这上面），
- * 所以只要 `input` 状态变了（无论来自键盘、粘贴还是程序清空）
- * 都等 DOM 更新后重算一次高度。
+ * 非受控模式下 textarea 本身与 Vue 渲染绝缘（没有 value 绑定），
+ * 这里只负责「≥3 行显示展开按钮」—— 只读 scrollHeight、不改布局。
+ * 高度调整统一由 onComposerInput（停顿后）和 onCompositionEnd（上屏后）调度；
+ * 发送清空由 onSend 自己调 resizeComposer。
  */
 watch(input, async () => {
   await nextTick()
-  // 这里**不要**立刻 resizeComposer：每次按键都会触发这个 watch，
-  // 立刻改高度＝每按一键重排一次，正是「光标乱跳到末尾」的成因。
-  // 高度统一由 onComposerInput（停顿后）和 onCompositionEnd（上屏后）调度；
-  // 发送清空由 onSend 自己调 resizeComposer。
-  // 行数变化影响「≥3 行显示展开按钮」，这步只读 scrollHeight、不改布局。
   updateExpandBtn()
   requestAnimationFrame(updateExpandBtn)
 })
@@ -390,7 +400,7 @@ async function scrollToBottom() {
  *   · 打字 → 组合态 → 重排推迟 → 不变高
  *   · 退格删字 → 不是组合态 → 重排立刻发生 → 正常变高
  *   · 再打字 → 又进组合态 → 又不行
- * 而且 `v-model` 在组合态是故意不更新状态的，所以靠 watch 也兜不住。
+ * 非受控模式下（无 v-model），这里同时负责把 DOM 值同步进影子状态。
  */
 function onComposerInput() {
   const el = taEl.value
@@ -401,10 +411,9 @@ function onComposerInput() {
   //    · 不把 DOM 值同步进状态 —— 组合态下 el.value 可能含预编辑文本，
   //      同步会污染状态并触发 Vue 重渲染；上屏后的 input 事件会统一同步。
   //    · 不动光标（restore 交给 restoreCaret 自己的 isComposing 守卫兜底）。
-  //    上一轮修复只堵了「重排」，漏了这两条，真机上字仍然落到末尾。
   const isComposingNow = composing || inImeComposition(el)
   if (!isComposingNow) {
-    // 非组合态：v-model 可能没同步（粘贴/部分输入法事件被吞），拉回状态
+    // 非组合态：把 DOM 值同步进影子状态（粘贴/部分输入法事件被吞时兜底）
     if (el.value !== input.value) input.value = el.value
     scheduleResize(350)
     // 等 Vue 重渲染完，把光标还回原位
@@ -422,10 +431,12 @@ function onCompositionStart() {
 /**
  * 输入法上屏：这是调整高度最安全的时机 —— 组合已经结束，
  * 重排不会再打断输入法的光标定位。
+ * 非受控模式下这里负责把**当前聚焦的那个框**的最新文本同步进影子状态。
  */
 function onCompositionEnd() {
   composing = false
-  onComposerInput()
+  const el = composerFs.value ? fsEl.value : taEl.value
+  if (el && el.value !== input.value) input.value = el.value
   scheduleResize(0)
 }
 
@@ -537,14 +548,10 @@ function stopComposerWatch() {
 }
 
 /**
- * 失焦时把 DOM 里的真实内容同步回状态 —— 这条很重要。
- *
- * 真机必现的 bug：中文输入法组合态下 `v-model` 不会更新状态，
- * 此时点顶部的「已允许联网」等开关，输入框会先失焦、再触发重渲染；
- * Vue 的 `v-model` 指令发现「DOM 值 ≠ 状态值」，就用状态里的空串覆盖了 DOM，
- * **用户刚打的字凭空消失**。
- *
- * 在 blur 这一刻先把 DOM 拉回状态，重渲染时两者相等，就不会再被覆盖。
+ * 失焦时把 DOM 里的真实内容同步回影子状态 —— 非受控模式下这是
+ * 唯一保证「点开关后内容不丢」的路径：
+ * 真机上输入法组合态 / 输入事件被吞时，状态可能滞后于 DOM；
+ * 失焦这一刻 DOM 是权威，先拉回状态，后续任何重渲染都不会动 textarea。
  */
 function onComposerBlur() {
   const el = taEl.value
@@ -577,8 +584,8 @@ async function onAttach(e: Event) {
 async function onSend() {
   const s = session.value
   if (!s || streaming.value) return
-  // 兜底读一次 DOM。
-  // 踩过的坑：某些输入法/机型下 v-model 没能同步（输入法还在组合态、
+  // 兜底读一次 DOM（非受控模式下 DOM 才是权威）。
+  // 踩过的坑：某些输入法/机型下状态没能同步（输入法还在组合态、
   // 或输入事件被吞），输入框里明明有字，但 input.value 还是空的，
   // 于是「发送」按钮一直是禁用态、点了没反应。
   // 与设置页的 API Key 是同一类问题：不信任单一状态源，DOM 里有什么就用什么。
@@ -596,8 +603,10 @@ async function onSend() {
   const images = [...attached.value]
   input.value = ''
   attached.value = []
-  // 状态被清空后同步清掉 DOM，否则输入法里的残留文字会留在屏幕上
+  // 状态被清空后同步清掉 DOM（非受控模式必须手动清），
+  // 否则输入法里的残留文字会留在屏幕上
   if (taEl.value) taEl.value.value = ''
+  if (fsEl.value) fsEl.value.value = ''
   // 高度要跟着缩回 1 行，否则发完还留着上次撑开的空档
   resizeComposer()
   // 对比请教：双轨生成，军师 vs 专业分析
@@ -1032,9 +1041,18 @@ const memoryHint = computed(() => {
             </button>
           </div>
           <div class="ta-wrap">
+            <!--
+              非受控 textarea：**故意不用 v-model / :value**。
+              这是「光标移到中间、字却落到末尾」的最终防线 ——
+              Vue 一旦给 textarea 绑定 value，任何一次重渲染都可能把
+              `el.value = state` 写回 DOM，而**写回 value 会把光标甩到末尾**
+              （即使是同值，部分 WebView 也会重置光标）。
+              现在 DOM value 完全由用户输入驱动，Vue 只通过 @input 同步
+              一份「影子状态」供发送用；textarea 本身从此与重渲染绝缘。
+              微信输入框能稳定在中间插入，靠的就是「原生 textarea + 无人写回」。
+            -->
             <textarea
               ref="taEl"
-              v-model="input"
               rows="1"
               @keydown="onKeydown"
               @input="onComposerInput"
@@ -1077,13 +1095,17 @@ const memoryHint = computed(() => {
           <button v-if="streaming" class="btn danger sm" @click="sessions.abort()">停止</button>
           <button v-else class="btn primary sm" @click="onSend">发送</button>
         </div>
+        <!-- 同样非受控（注释见折叠框）；全屏框必须绑 compositionstart：
+             之前缺这个事件，全屏框组合态会漏判 composing，组合态里同步
+             value/移光标导致字落末尾。 -->
         <textarea
           ref="fsEl"
-          v-model="input"
           class="fs-ta"
           @keydown="onKeydown"
           @input="onFsInput"
-          @compositionend="onFsInput"
+          @compositionstart="onCompositionStart"
+          @compositionend="onCompositionEnd"
+          @blur="onFsBlur"
         ></textarea>
       </div>
     </Teleport>
