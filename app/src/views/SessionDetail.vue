@@ -86,6 +86,8 @@ const EXPAND_THRESHOLD = 88
 function updateExpandBtn() {
   const el = taEl.value
   if (!el || composerFs.value) return
+  // 组合态里不读 scrollHeight：强制布局查询也可能打断输入法光标定位
+  if (composing || inImeComposition(el)) return
   showExpandBtn.value = el.scrollHeight >= EXPAND_THRESHOLD
 }
 
@@ -407,10 +409,12 @@ function onComposerInput() {
   if (!el) return
   // 1) 先记住光标 —— 此刻它还是用户在文本里的真实位置
   const caret = snapshotCaret(el)
-  // 2) 组合态（拼音还没上屏）里**两件事都不能做**：
+  // 2) 组合态（拼音还没上屏）里**三件事都不能做**：
   //    · 不把 DOM 值同步进状态 —— 组合态下 el.value 可能含预编辑文本，
   //      同步会污染状态并触发 Vue 重渲染；上屏后的 input 事件会统一同步。
   //    · 不动光标（restore 交给 restoreCaret 自己的 isComposing 守卫兜底）。
+  //    · 不读 scrollHeight（updateExpandBtn）—— 组合态里任何强制布局
+  //      （哪怕只读）都可能打断输入法关联的光标定位，导致上屏字落末尾。
   const isComposingNow = composing || inImeComposition(el)
   if (!isComposingNow) {
     // 非组合态：把 DOM 值同步进影子状态（粘贴/部分输入法事件被吞时兜底）
@@ -419,7 +423,7 @@ function onComposerInput() {
     // 等 Vue 重渲染完，把光标还回原位
     restoreAfterRender(el, caret)
   }
-  updateExpandBtn()
+  if (!isComposingNow) updateExpandBtn()
 }
 
 /** 输入法开始组合（拼音还没上屏）：立刻停掉所有布局调整 */
@@ -432,12 +436,20 @@ function onCompositionStart() {
  * 输入法上屏：这是调整高度最安全的时机 —— 组合已经结束，
  * 重排不会再打断输入法的光标定位。
  * 非受控模式下这里负责把**当前聚焦的那个框**的最新文本同步进影子状态。
+ *
+ * ⭐ 为什么高度调整要**延迟 180ms** 而不是立即（用户实测：数字/英文中间插入
+ * 已正常，但中文输入法上屏的汉字仍落末尾）：
+ *  compositionend 只是「组合态结束」的信号，输入法上屏后还会短暂收尾
+ * （尤其逐字输入时 compositionend 连续触发）。此刻立刻写 height 强制重排，
+ * 会打断输入法对光标的管理，刚上屏的汉字被甩到末尾。
+ * 延迟到 180ms 后，输入法早已退出编辑上下文，重排才安全。
+ * 状态同步（input.value = el.value）不改 DOM、不触发布局，可以立即做。
  */
 function onCompositionEnd() {
   composing = false
   const el = composerFs.value ? fsEl.value : taEl.value
   if (el && el.value !== input.value) input.value = el.value
-  scheduleResize(0)
+  scheduleResize(180)
 }
 
 /** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
@@ -493,7 +505,13 @@ function resizeComposer() {
   const border = Math.max(0, el.offsetHeight - el.clientHeight)
   const target = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
   if (Math.abs(target - el.offsetHeight) < 1) return
+  // ⭐ 写 height 前记住光标、写完后立即还原：写 height 触发的重新布局
+  // 可能把光标甩到文本末尾（用户实测：中文上屏后汉字落末尾）。即使
+  // 延迟重排（onCompositionEnd → 180ms）也没躲过，这里也能兜底拉回。
+  // 组合态守卫在 restoreCaret 内部，输入法正在编辑时它不会动手。
+  const caret = readCaret(el)
   el.style.height = `${target}px`
+  restoreCaret(el, caret)
   // 输入区变高会挤压上面的聊天区，保持消息仍贴在底部
   void scrollToBottom()
 }
