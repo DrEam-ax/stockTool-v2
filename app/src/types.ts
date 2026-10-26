@@ -313,6 +313,22 @@ export interface ChatMessage {
   pending?: boolean
   /** 对比请教：同一问题的两套独立回答（军师 vs 专业分析） */
   parallel?: ParallelAnswer
+  /** 提问时刻的行情快照（用户消息）：发问那一分钟的价格存档，事后可回看 */
+  snapshot?: QuoteSnapshot
+}
+
+/** 提问时刻行情快照。字段来自腾讯报价接口，time 精确到秒 */
+export interface QuoteSnapshot {
+  /** 展示名，如 贵州茅台 */
+  name: string
+  /** 6 位代码 */
+  code: string
+  price: number
+  prevClose: number
+  change: number
+  changePct: number
+  /** 行情快照时间，如 20261026161458 */
+  time: string
 }
 
 /** 一次工具调用的记录（给用户看的，也是事后追溯的依据） */

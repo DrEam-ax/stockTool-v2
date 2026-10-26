@@ -9,8 +9,10 @@
 
 import { request } from '@/lib/http'
 import { asString, type ToolDef, type ToolContext, type ToolResult } from './types'
+import type { QuoteSnapshot } from '@/types'
 
-/** 把各种写法归一成腾讯用的 symbol（sh600519 / sz300750 / bj920000） */export function resolveSymbol(input: string, ctx: ToolContext): string | null {
+/** 把各种写法归一成腾讯用的 symbol（sh600519 / sz300750 / bj920000） */
+export function resolveSymbol(input: string, ctx: ToolContext): string | null {
   const raw = input.trim()
   if (!raw) return null
 
@@ -71,7 +73,7 @@ interface Quote {
   time: string
 }
 
-function parseTencentQuote(line: string): Quote | null {
+export function parseTencentQuote(line: string): Quote | null {
   const m = /v_(\w+)="([^"]*)"/.exec(line)
   if (!m) return null
   const f = m[2].split('~')
@@ -98,6 +100,46 @@ function parseTencentQuote(line: string): Quote | null {
     marketCap: num(45),
     pb: num(46),
     time: f[30] || '',
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 提问时刻行情快照（发问那一分钟的价格存档）                          */
+/* ------------------------------------------------------------------ */
+
+/** 把腾讯报价行转成快照（纯函数，便于测试）。 */
+export function quoteLineToSnapshot(line: string): QuoteSnapshot | null {
+  const q = parseTencentQuote(line)
+  if (!q) return null
+  return {
+    name: q.name,
+    code: q.code,
+    price: q.price,
+    prevClose: q.prevClose,
+    change: q.change,
+    changePct: q.changePct,
+    time: q.time,
+  }
+}
+
+/**
+ * 拉取单个标的的实时快照。失败返回 null（调用方静默跳过：
+ * 快照是锦上添花，绝不能阻塞发送或打断对话）。
+ */
+export async function fetchQuoteSnapshot(symbol: string): Promise<QuoteSnapshot | null> {
+  try {
+    const res = await request(`https://qt.gtimg.cn/q=${symbol}`, {
+      encoding: 'gbk',
+      timeoutMs: 10000,
+    })
+    if (!res.ok) return null
+    for (const part of res.text.split(';')) {
+      const snap = quoteLineToSnapshot(part.trim())
+      if (snap) return snap
+    }
+    return null
+  } catch {
+    return null
   }
 }
 

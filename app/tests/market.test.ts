@@ -1,11 +1,15 @@
 /**
- * 当日分时走势工具（stock_trend）的解析与报告测试。
+ * 当日分时走势工具（stock_trend）与提问时刻快照的解析测试。
  *
- * 纯函数测试：不联网，喂构造的腾讯分时接口样本，验证解析与
- * 报告生成逻辑（字段映射、分钟点过滤、节奏/量峰统计）。
+ * 纯函数测试：不联网，喂构造的腾讯接口样本，验证解析与
+ * 报告生成逻辑（字段映射、分钟点过滤、节奏/量峰统计、快照转换）。
  */
 import { describe, expect, it } from 'vitest'
-import { buildTrendReport, parseMinuteResponse } from '../src/services/tools/market'
+import {
+  buildTrendReport,
+  parseMinuteResponse,
+  quoteLineToSnapshot,
+} from '../src/services/tools/market'
 
 /** 构造一个最小合法样本：3 个分钟点 + 内嵌的 qt 报价数组 */
 function bodyWith(points: string[]): string {
@@ -96,5 +100,27 @@ describe('buildTrendReport：分时报告生成', () => {
     // 昨收 1318.49 → 现价 1335.00，涨（注意报告用全角括号）
     expect(report).toContain('涨 1.25%')
     expect(report).toContain('（+16.51）')
+  })
+})
+
+describe('quoteLineToSnapshot：提问时刻快照转换', () => {
+  it('腾讯报价行 → 快照字段（价/昨收/涨跌/时间）', () => {
+    const line =
+      'v_sh600519="1~贵州茅台~600519~1335.00~1318.49~1311.84~' +
+      '~'.repeat(24) +
+      '20261026161458~16.51~1.25~1343.88~1310.00~1335.00/57686/7677216283~57686~767722~0.46~20.49";'
+    const snap = quoteLineToSnapshot(line)
+    expect(snap).not.toBeNull()
+    expect(snap!.name).toBe('贵州茅台')
+    expect(snap!.code).toBe('600519')
+    expect(snap!.price).toBe(1335)
+    expect(snap!.prevClose).toBe(1318.49)
+    expect(snap!.changePct).toBe(1.25)
+    expect(snap!.time).toBe('20261026161458')
+  })
+
+  it('无法解析的行 → null', () => {
+    expect(quoteLineToSnapshot('not a quote')).toBeNull()
+    expect(quoteLineToSnapshot('v_x="1~";')).toBeNull()
   })
 })

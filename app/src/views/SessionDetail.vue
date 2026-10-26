@@ -35,6 +35,18 @@ function modeName(m: AdvisorMode): string {
   return MODE_META[m]?.name ?? '研究模式'
 }
 
+/** 快照时间 "20261026161458" → "10-26 16:14" */
+function fmtSnapTime(t: string): string {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(t)
+  if (!m) return t
+  return `${m[2]}-${m[3]} ${m[4]}:${m[5]}`
+}
+
+/** 快照涨跌方向符号 */
+function snapDir(s: { changePct: number }): string {
+  return s.changePct > 0 ? '+' : s.changePct < 0 ? '-' : ''
+}
+
 const route = useRoute()
 const router = useRouter()
 const sessions = useSessions()
@@ -871,6 +883,15 @@ const memoryHint = computed(() => {
             <template v-else>
               <div style="white-space: pre-wrap">{{ m.content }}</div>
             </template>
+          </div>
+
+          <!-- 提问时刻行情快照：发问那分钟的价格存档 -->
+          <div v-if="m.role === 'user' && m.snapshot" class="snap-line">
+            <TabIcon name="search" :size="11" />
+            <span>
+              快照 {{ fmtSnapTime(m.snapshot.time) }} ·
+              {{ m.snapshot.name }} {{ m.snapshot.price.toFixed(2) }}（{{ snapDir(m.snapshot) }}{{ m.snapshot.changePct.toFixed(2) }}%）
+            </span>
           </div>
 
           <div v-if="m.role === 'assistant'" class="msg-foot">

@@ -693,6 +693,17 @@ textarea {
   max-width: 96%;
 }
 
+/* 提问时刻行情快照：用户消息下方的小字存档 */
+.snap-line {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.9;
+}
+
 .msg.assistant .bubble.error {
   border-color: var(--err-border);
   background: var(--err-bg);

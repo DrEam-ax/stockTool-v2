@@ -16,6 +16,8 @@ import type { LlmMessage } from '@/services/llm'
 import { buildSystemPrompt, buildAnalystSystemPrompt, type MemoryContext } from '@/services/prompt'
 import { runAgent, type ToolCallDetail } from '@/services/agent'
 import { activeTools } from '@/services/tools'
+import type { ToolContext } from '@/services/tools/types'
+import { fetchQuoteSnapshot, resolveSymbol } from '@/services/tools/market'
 import { useProviders } from './providers'
 import { useKnowledge } from './knowledge'
 import { useMemory } from './memory'
@@ -47,6 +49,21 @@ export function newSession(patch: Partial<Session> = {}): Session {
 
 const MAX_HISTORY_MESSAGES = 12
 const MAX_HISTORY_CHARS = 12000
+
+/**
+ * 决定发问时给哪个标的做行情快照：
+ * 优先消息里出现的 6 位代码，其次会话的「聚焦标的」；都没有就不做。
+ */
+export function pickSnapshotSymbol(
+  text: string,
+  s: Session,
+  kbs: KnowledgeBase[],
+): string | null {
+  const code = /(?<!\d)(\d{6})(?!\d)/.exec(text)?.[1]
+  const probe = code ?? s.focusSubject?.name ?? ''
+  if (!probe) return null
+  return resolveSymbol(probe, { kbs } as ToolContext)
+}
 
 export function useSessions() {
   const { defaultProvider, load: loadProviders } = useProviders()
@@ -210,6 +227,20 @@ export function useSessions() {
       createdAt: nowIso(),
     }
     s.messages.push(userMsg)
+
+    // 提问时刻行情快照：发问那分钟的价格存档，事后可回看。
+    // 异步拉取、失败静默跳过 —— 快照绝不能阻塞发送。
+    const snapSymbol = pickSnapshotSymbol(text, s, kbs)
+    if (snapSymbol) {
+      void fetchQuoteSnapshot(snapSymbol)
+        .then((snap) => {
+          if (snap) {
+            userMsg.snapshot = snap
+            return save(s)
+          }
+        })
+        .catch(() => {})
+    }
 
     if (s.messages.filter((m) => m.role === 'user').length === 1) {
       s.title = text.slice(0, 24) || '图片分析'
