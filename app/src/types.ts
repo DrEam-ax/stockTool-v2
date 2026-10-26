@@ -302,6 +302,8 @@ export interface ChatMessage {
   usedMemory?: boolean
   /** 生成这条回答时用的模式，让用户知道当时是什么立场 */
   mode?: AdvisorMode
+  /** 这条回答的方式：advisor=军师回答（走知识库）；plain=大模型直接回答。对比消息两侧各记自己的 */
+  answerStyle?: 'advisor' | 'plain'
   /** AI 在这次回答里实际调用了哪些工具 —— 必须可见，否则用户无法判断可信度 */
   toolCalls?: ToolCallRecord[]
   /** 调用工具前的"思考"文本。它不是答案，混进正文会让人误以为那就是回答 */
@@ -450,6 +452,8 @@ export interface Session {
   activeKbIds: string[]
   /** 会话模式，默认 research（向后兼容） */
   mode?: AdvisorMode
+  /** 回答方式：advisor=军师回答（知识库，默认）；plain=大模型直接回答（普通模式） */
+  answerStyle?: 'advisor' | 'plain'
   /** persona / audit 模式下扮演谁（知识库里的 author_uid） */
   personaAuthorUid?: string | null
   /** audit 模式的背景补充（持仓、成本等） */

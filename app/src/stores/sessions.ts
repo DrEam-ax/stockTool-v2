@@ -13,7 +13,12 @@ import type { ChatMessage, KnowledgeBase, ParallelSide, Session, ToolCallRecord 
 import * as db from '@/lib/db'
 import { nowIso, uid } from '@/lib/fmt'
 import type { LlmMessage } from '@/services/llm'
-import { buildSystemPrompt, buildAnalystSystemPrompt, type MemoryContext } from '@/services/prompt'
+import {
+  buildSystemPrompt,
+  buildPlainSystemPrompt,
+  buildAnalystSystemPrompt,
+  type MemoryContext,
+} from '@/services/prompt'
 import { runAgent, type ToolCallDetail } from '@/services/agent'
 import { activeTools } from '@/services/tools'
 import type { ToolContext } from '@/services/tools/types'
@@ -204,17 +209,30 @@ export function useSessions() {
     }
     const hasTools = activeTools(toolCtx).length > 0
 
-    const systemPrompt = buildSystemPrompt({
-      kbs,
-      question: text,
-      memory: memCtx,
-      focusSubject: s.focusSubject ?? null,
-      mode,
-      personaAuthorUid: s.personaAuthorUid ?? null,
-      auditContext: s.auditContext,
-      hasTools,
-      allowOnline: Boolean(s.allowOnline),
-    })
+    // 回答方式（悬浮按钮常驻切换）：
+    //   advisor=军师回答（走知识库，默认）；plain=大模型直接回答（不加载任何知识库观点）
+    const answerStyle = s.answerStyle ?? 'advisor'
+    const systemPrompt =
+      answerStyle === 'plain'
+        ? buildPlainSystemPrompt({
+            kbs: [],
+            question: text,
+            memory: memCtx,
+            focusSubject: s.focusSubject ?? null,
+            hasTools,
+            allowOnline: Boolean(s.allowOnline),
+          })
+        : buildSystemPrompt({
+            kbs,
+            question: text,
+            memory: memCtx,
+            focusSubject: s.focusSubject ?? null,
+            mode,
+            personaAuthorUid: s.personaAuthorUid ?? null,
+            auditContext: s.auditContext,
+            hasTools,
+            allowOnline: Boolean(s.allowOnline),
+          })
 
     // 历史必须在 push 当前提问之前取
     const history = buildHistory(s)
@@ -260,6 +278,7 @@ export function useSessions() {
       })),
       usedMemory: Boolean(memCtx),
       mode,
+      answerStyle,
       toolCalls: [],
       pending: true,
     }

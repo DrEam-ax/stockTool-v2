@@ -1200,6 +1200,48 @@ describe('会话详情：能打字就必须能发送', () => {
       expect(w.text()).not.toContain('军师-第6条')
     })
 
+    it('按钮常驻：空会话也显示；点击切换回答方式（军师↔大模型），图标跟随', async () => {
+      const w = await mountSession()
+      // 常驻：没有任何消息的会话也显示悬浮按钮
+      const sw = document.querySelector('.cmp-switch') as HTMLElement
+      expect(sw).toBeTruthy()
+      const s = useSessions().sessions.value[0]
+      // 默认军师模式（advisor）→ 学士帽图标
+      expect(s.answerStyle ?? 'advisor').toBe('advisor')
+      expect(sw.innerHTML).toContain('M5 9.5')
+
+      // 单击 → 普通模式（plain）→ 机器人图标
+      sw.click()
+      await nextTick()
+      expect(s.answerStyle).toBe('plain')
+      expect(sw.innerHTML).toContain('M7 4.5')
+
+      // 再点 → 切回军师
+      sw.click()
+      await nextTick()
+      expect(s.answerStyle).toBe('advisor')
+      expect(sw.innerHTML).toContain('M5 9.5')
+    })
+
+    it('普通模式发送：大模型直接回答，消息标记 answerStyle=plain，脚注显示「大模型回答」', async () => {
+      const w = await mountSession()
+      const s = useSessions().sessions.value[0]
+      s.answerStyle = 'plain'
+      const ta = w.find('textarea')
+      await ta.setValue('宁德时代怎么样')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const last = s.messages[s.messages.length - 1]
+      expect(last.role).toBe('assistant')
+      expect(last.answerStyle).toBe('plain')
+      expect(last.parallel).toBeUndefined() // 单轨
+      expect(w.text()).toContain('大模型回答')
+    })
+
     it('切换按钮可拖动：pointer 拖动后位置变化', async () => {
       const w = await mountSession()
       await w.find('button[aria-label="工具栏"]').trigger('click')

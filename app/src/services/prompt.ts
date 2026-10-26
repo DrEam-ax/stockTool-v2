@@ -437,6 +437,59 @@ function buildResearchPrompt(args: BuildPromptArgs, notice?: string): string {  
   return blocks.join('\n\n')
 }
 
+/**
+ * 「大模型直接回答」提示词 —— 普通模式。
+ *
+ * 与军师（依赖知识库 persona / 历史观点）不同，这一侧**不加载任何知识库**，
+ * 不引用任何军师的历史观点，由大模型基于通用金融逻辑 + 工具拿到的实时数据
+ * 直接回答。行情/联网/快照等工具照常可用（hasTools 只反映工具可用性，
+ * 与知识库无关）。
+ */
+export function buildPlainSystemPrompt(args: BuildPromptArgs): string {
+  const blocks: string[] = []
+
+  blocks.push(
+    '你是一位专业的金融分析助手。请**不依赖任何历史观点库**，' +
+      '直接基于你的知识与分析回答用户的问题。',
+  )
+
+  if (args.hasTools) {
+    blocks.push(
+      [
+        '## 工作要求',
+        '1. 涉及任何实时数据（价格、涨跌幅、成交额、资金流、公告、最新新闻）时，' +
+          '**必须先调用可用工具查真实数据**，不要凭记忆和印象回答。',
+        '2. 工具拿不到的数据，如实说明「没有数据」，绝不编造。',
+      ].join('\n'),
+    )
+  }
+
+  if (args.focusSubject?.name) {
+    blocks.push(
+      `## 本次会话聚焦\n用户想重点分析 **${args.focusSubject.name}**，请围绕它组织回答。`,
+    )
+  }
+
+  if (args.memory) {
+    blocks.push('## 用户情况\n' + formatMemory(args.memory))
+  } else {
+    blocks.push(
+      '## 用户情况\n用户已**关闭全局记忆**，本次不要引用任何持仓或个人偏好，只做纯粹的标的分析。',
+    )
+  }
+
+  blocks.push(
+    [
+      '## 回答要求',
+      '1. 观点明确、依据充分，不模棱两可；数据与逻辑不符时如实承认不确定性。',
+      '2. 用中文回答，结构清晰，可加小标题，但要控制在合理篇幅。',
+      '3. 结尾用一句话提示：以上为分析参考，不构成投资建议。',
+    ].join('\n'),
+  )
+
+  return blocks.join('\n\n')
+}
+
 export interface BuildAnalystArgs {
   question: string
   memory?: MemoryContext | null

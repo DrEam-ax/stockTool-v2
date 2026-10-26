@@ -199,11 +199,43 @@ function sideOpenTools(m: ChatMessage) {
   return (side?.toolCalls ?? []).filter((x) => x.detail && openDetails.value.has(x.id))
 }
 
-/** 会话最后一条是 parallel（含生成中）时显示右侧切换按钮 */
-const showCmpSwitch = computed(() => {
-  const last = session.value?.messages[session.value.messages.length - 1]
-  return Boolean(last?.parallel)
+/**
+ * 切换按钮**常驻**：会话页始终显示。
+ *  · 对比模式：按钮表示当前正在看哪一侧（军师/专业分析），点击切换查看侧。
+ *  · 非对比模式：按钮表示当前回答方式（军师模式=知识库回答 / 普通模式=大模型直接回答），
+ *    点击切换会话的回答方式，后续发送按新方式回答。
+ */
+const showCmpSwitch = computed(() => Boolean(session.value))
+
+/** 会话最后一条是对比消息（双轨生成中/刚生成）时，按钮让位给「查看侧切换」 */
+const lastParallel = computed(() => {
+  const msgs = session.value?.messages ?? []
+  return Boolean(msgs[msgs.length - 1]?.parallel)
 })
+
+/** 按钮图标：对比上下文（对比模式 或 最后一条是双轨消息）= 当前查看侧；否则 = 当前回答方式 */
+const cmpIcon = computed<IconName>(() => {
+  if (compareMode.value || lastParallel.value)
+    return compareView.value === 'analyst' ? 'plain' : 'advisor'
+  return (session.value?.answerStyle ?? 'advisor') === 'plain' ? 'plain' : 'advisor'
+})
+
+/** 单击：对比上下文切换查看侧；否则切换回答方式（军师 ↔ 大模型） */
+function onCmpClick() {
+  if (compareMode.value || lastParallel.value) {
+    flipCompareView()
+  } else {
+    toggleAnswerStyle()
+  }
+}
+
+/** 切换会话回答方式并持久化 */
+function toggleAnswerStyle() {
+  const s = session.value
+  if (!s) return
+  s.answerStyle = s.answerStyle === 'plain' ? 'advisor' : 'plain'
+  void sessions.save(s)
+}
 
 /**
  * 对比消息分页：默认只渲染最近 5 条对比回复（防止超长会话里
@@ -315,14 +347,14 @@ function onCmpPointerUp() {
   }
 }
 
-// 按钮出现/消失时管理待机定时器
+// 按钮出现/消失时管理待机定时器（immediate：常驻后首次进入也立即计时）
 watch(showCmpSwitch, (v) => {
   if (v) armDockTimer()
   else {
     clearDockTimer()
     docked.value = false
   }
-})
+}, { immediate: true })
 
 const streaming = computed(() => sessions.streamingId.value === sessionId.value)
 const noProvider = computed(() => providers.value.length === 0)
@@ -946,7 +978,11 @@ const memoryHint = computed(() => {
           <div v-if="m.role === 'assistant'" class="msg-foot">
             <span v-if="m.pending" class="muted">生成中…</span>
             <template v-else>
-              <span v-if="m.mode && m.mode !== 'research'" class="chip on">
+              <span v-if="m.answerStyle === 'plain'" class="chip on">
+                <TabIcon name="plain" :size="13" />
+                大模型回答
+              </span>
+              <span v-else-if="m.mode && m.mode !== 'research'" class="chip on">
                 <TabIcon :name="modeIcon(m.mode)" :size="13" />
                 {{ modeName(m.mode) }}
               </span>
@@ -1134,20 +1170,20 @@ const memoryHint = computed(() => {
       </div>
     </Teleport>
 
-    <!-- 对比请教：右侧可拖动的切换按钮（拖动换位置，点击切换军师/专业分析） -->
+    <!-- 右侧常驻切换按钮：拖动换位置；点击切回答方式/对比查看侧 -->
     <div
       v-if="showCmpSwitch"
       class="cmp-switch"
       :class="{ docked }"
       :style="{ transform: cmpTransform }"
-      aria-label="切换对比回答"
-      @click="!dragMoved && flipCompareView()"
+      :aria-label="(compareMode || lastParallel) ? '切换对比回答' : (session?.answerStyle === 'plain' ? '切换为军师模式' : '切换为普通模式')"
+      @click="!dragMoved && onCmpClick()"
       @pointerdown="onCmpPointerDown"
       @pointermove="dragMove"
       @pointerup="onCmpPointerUp"
       @pointercancel="onCmpPointerUp"
     >
-      <TabIcon name="compare" :size="18" />
+      <TabIcon :name="cmpIcon" :size="18" />
     </div>
     <div v-if="showKbPicker" class="modal-mask" @click.self="showKbPicker = false">
       <div class="modal">

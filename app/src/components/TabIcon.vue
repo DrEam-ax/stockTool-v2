@@ -21,6 +21,8 @@ export type IconName =
   | 'menu'
   | 'chevron'
   | 'close'
+  | 'advisor'
+  | 'plain'
 
 withDefaults(
   defineProps<{ name: IconName; size?: number }>(),
@@ -89,6 +91,19 @@ const paths: Record<IconName, string[]> = {
   chevron: ['m9 6 6 6-6 6'],
   // 叉号（删除入口）
   close: ['M18 6 6 18', 'm6 6 12 12'],
+  // 军师模式：学士帽（菱形帽顶 + 帽檐 + 垂下的流苏）
+  advisor: [
+    'M5 9.5 L12 6 L19 9.5 L12 13 Z',
+    'M3.5 13.5 H20.5',
+    'M12 13.5 V16.5',
+  ],
+  // 普通模式：机器人头（圆角方头 + 天线 + 两只眼睛）
+  plain: [
+    'M7 4.5 H17 A2.5 2.5 0 0 1 19.5 7 V15 A2.5 2.5 0 0 1 17 17.5 H7 A2.5 2.5 0 0 1 4.5 15 V7 A2.5 2.5 0 0 1 7 4.5 Z',
+    'M12 2 V4.5',
+    'M8.9 10 H9.7',
+    'M14.3 10 H15.1',
+  ],
 }
 
 /** 圆形子元素：各图标的中心圆 */
@@ -107,6 +122,8 @@ const circles: Record<IconName, Array<[number, number, number]>> = {
   menu: [],
   chevron: [],
   close: [],
+  advisor: [[12, 17.6, 1]],
+  plain: [[12, 1.6, 0.8]],
 }
 </script>
 
