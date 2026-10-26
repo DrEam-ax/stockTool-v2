@@ -107,6 +107,8 @@ function closeComposerFs() {
 function onFsInput() {
   const el = fsEl.value
   if (!el) return
+  // 与折叠框同一规则：组合态里不同步 value、不动光标（见 onComposerInput 注释）
+  if (composing || inImeComposition(el)) return
   const caret = snapshotCaret(el)
   if (el.value !== input.value) input.value = el.value
   restoreAfterRender(el, caret)
@@ -395,15 +397,20 @@ function onComposerInput() {
   if (!el) return
   // 1) 先记住光标 —— 此刻它还是用户在文本里的真实位置
   const caret = snapshotCaret(el)
-  // 2) 组合态下 v-model 可能没同步，把 DOM 的真实内容拉回状态。
-  //    否则后面任何一次重渲染都可能用空状态覆盖掉 DOM，
-  //    用户刚打的字就没了 —— 真机上「点联网开关文字消失」正是这个机制。
-  if (el.value !== input.value) input.value = el.value
+  // 2) 组合态（拼音还没上屏）里**两件事都不能做**：
+  //    · 不把 DOM 值同步进状态 —— 组合态下 el.value 可能含预编辑文本，
+  //      同步会污染状态并触发 Vue 重渲染；上屏后的 input 事件会统一同步。
+  //    · 不动光标（restore 交给 restoreCaret 自己的 isComposing 守卫兜底）。
+  //    上一轮修复只堵了「重排」，漏了这两条，真机上字仍然落到末尾。
+  const isComposingNow = composing || inImeComposition(el)
+  if (!isComposingNow) {
+    // 非组合态：v-model 可能没同步（粘贴/部分输入法事件被吞），拉回状态
+    if (el.value !== input.value) input.value = el.value
+    scheduleResize(350)
+    // 等 Vue 重渲染完，把光标还回原位
+    restoreAfterRender(el, caret)
+  }
   updateExpandBtn()
-  // 3) 打字过程中**不动布局**，等停顿后再算高度（见 scheduleResize）
-  if (!composing) scheduleResize(350)
-  // 4) 等 Vue 重渲染完，把光标还回原位（「把光标移到中间、字却跑到末尾」的兜底）
-  restoreAfterRender(el, caret)
 }
 
 /** 输入法开始组合（拼音还没上屏）：立刻停掉所有布局调整 */
@@ -442,7 +449,7 @@ const COMPOSER_MAX_H = 130
  * 输入框高度由浏览器自己按内容撑开，**JS 不需要也不应该再碰 height**。
  * 判定逻辑见 `lib/composer.ts`（抽成纯函数便于单测防回归）。
  */
-import { HAS_FIELD_SIZING, readCaret, restoreCaret, type Caret } from '@/lib/composer'
+import { HAS_FIELD_SIZING, inImeComposition, readCaret, restoreCaret, type Caret } from '@/lib/composer'
 
 /**
  * 输入框随内容变高，并保证光标行留在可视区内。
@@ -465,13 +472,17 @@ function resizeComposer() {
   if (!el) return
   // 原生 field-sizing 已接管高度：JS 收手，避免强制重排打断输入法光标定位
   if (HAS_FIELD_SIZING) return
-  // 组合态里绝不碰布局 —— 见下面 scheduleResize 的说明
-  if (composing) return
-  el.style.height = 'auto'
-  // border-box 下 height 不含边框，用差值补回来（比读 computedStyle 简单可靠）
+  // 组合态里绝不碰布局 —— 见下面 scheduleResize 的说明。
+  // 双保险：全局 composing 状态 + 元素自身 isComposing（部分输入法不发
+  // compositionstart 事件，全局状态会漏判；el.isComposing 是浏览器自己维护的）。
+  if (composing || inImeComposition(el)) return
+  // 最小化重排：先量目标高度，和当前高度几乎一样就不写 style。
+  // 读 scrollHeight 是同步布局，但「只读不改」不会打断输入法关联；
+  // 真正打断光标的是「写了 height 触发重新布局」。没变化就不写。
   const border = Math.max(0, el.offsetHeight - el.clientHeight)
-  const h = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
-  el.style.height = `${h}px`
+  const target = Math.min(el.scrollHeight + border, COMPOSER_MAX_H)
+  if (Math.abs(target - el.offsetHeight) < 1) return
+  el.style.height = `${target}px`
   // 输入区变高会挤压上面的聊天区，保持消息仍贴在底部
   void scrollToBottom()
 }
@@ -537,7 +548,12 @@ function stopComposerWatch() {
  */
 function onComposerBlur() {
   const el = taEl.value
-  if (el && el.value !== input.value) input.value = el.value
+  // 若失焦时输入法还在组合（部分输入法直接收起键盘、不发 compositionend），
+  // el.value 里可能带着未上屏的预编辑文本 —— 这种内容不能进状态。
+  // 预编辑文本随键盘收起即丢弃；真正上屏过的文本会由 input 事件/下次 focus 兜底。
+  if (el && !(composing || inImeComposition(el)) && el.value !== input.value) {
+    input.value = el.value
+  }
   // 万一 compositionend 没触发（部分输入法在失焦时直接收起键盘），
   // 这里把组合态清掉，否则高度调整会一直被挡住
   composing = false

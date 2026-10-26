@@ -80,6 +80,24 @@ describe('光标快照与还原', () => {
     const el = makeTextarea('abc')
     expect(restoreCaret(el, null)).toBe(false)
   })
+
+  it('组合态（isComposing=true）里绝不 setSelectionRange', () => {
+    const el = makeTextarea('abcdef')
+    el.focus()
+    el.setSelectionRange(3, 3)
+    const caret = readCaret(el)
+    // 模拟输入法组合态：浏览器把 isComposing 置 true
+    Object.defineProperty(el, 'isComposing', { configurable: true, value: true })
+    // 光标被（某个未知路径）甩到末尾 —— 组合态下也不能还原：
+    // Android WebView 组合态手动 setSelectionRange 会打断输入法，字落末尾
+    el.setSelectionRange(6, 6)
+    expect(restoreCaret(el, caret)).toBe(false)
+    expect(el.selectionStart).toBe(6) // 宁可不动，也不帮倒忙
+    // 组合态结束后恢复正常还原
+    Object.defineProperty(el, 'isComposing', { configurable: true, value: false })
+    expect(restoreCaret(el, caret)).toBe(true)
+    expect(el.selectionStart).toBe(3)
+  })
 })
 
 describe('field-sizing 收手判定', () => {

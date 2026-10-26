@@ -59,14 +59,35 @@ export function readCaret(el: HTMLTextAreaElement): Caret {
 }
 
 /**
+ * 元素是否处于输入法组合态（拼音还没上屏）。
+ *
+ * `isComposing` 是标准属性，但 TS 的 lib.dom 只在 HTMLInputElement 上声明了它，
+ * textarea 上没有 —— 用宽松接口接收，避免到处断言。
+ * 部分老内核不暴露该属性，拿不到就当「不在组合态」，由上层全局状态兜底。
+ */
+export function inImeComposition(el: unknown): boolean {
+  if (!el || typeof el !== 'object') return false
+  return Boolean((el as { isComposing?: boolean }).isComposing)
+}
+
+/**
  * 把光标还原到快照位置；不需要还原时返回 false。
  *
  * 保守策略：只在**仍然聚焦**且**光标确实被移走**时才动它，
  * 并且把位置夹在文本长度内（万一内容变短了）。
+ *
+ * 组合态（输入法拼音还没上屏）时**绝不 setSelectionRange**：
+ * Android WebView 上组合态读到的 selectionStart 是输入法组合区的位置，
+ * 此刻手动移动光标会打断输入法自身的组合状态 —— 上一轮修复没拦住这条，
+ * 用户实测「把光标移到中间、字仍落到末尾」依旧复现。
+ * 组合态下光标由输入法全权管理，JS 一动就是帮倒忙。
  */
 export function restoreCaret(el: HTMLTextAreaElement, caret: Caret | null): boolean {
   if (!caret) return false
   if (typeof document !== 'undefined' && document.activeElement !== el) return false
+  // 组合态守卫：`isComposing` 是标准属性（Chrome/WebView 支持，jsdom 也有）。
+  // 部分老内核不暴露它 —— 拿不到就当「不在组合态」，由上层 composing 状态兜底。
+  if (inImeComposition(el)) return false
   const len = el.value.length
   const start = Math.max(0, Math.min(caret.start, len))
   const end = Math.max(start, Math.min(caret.end, len))
