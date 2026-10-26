@@ -308,6 +308,8 @@ export interface ChatMessage {
   thinking?: string
   /** 轮数用尽被迫收尾（回答可能不完整） */
   hitRoundLimit?: boolean
+  /** 用户点了「停止」，生成被主动中止（不是出错；渲染为「已停止」而非错误条） */
+  aborted?: boolean
   error?: string
   usage?: { prompt: number; completion: number }
   pending?: boolean
@@ -355,6 +357,8 @@ export interface ParallelSide {
   toolCalls?: ToolCallRecord[]
   /** 轮数用尽被迫收尾 */
   hitRoundLimit?: boolean
+  /** 用户主动停止 */
+  aborted?: boolean
   error?: string
   usage?: { prompt: number; completion: number }
 }

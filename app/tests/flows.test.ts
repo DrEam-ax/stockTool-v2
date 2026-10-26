@@ -1296,6 +1296,34 @@ describe('会话详情：能打字就必须能发送', () => {
       await nextTick()
       expect(sw.classList.contains('docked')).toBe(false)
     })
+
+    it('按「停止」：消息标记已停止（aborted），不显示为红色错误', async () => {
+      // 覆盖 beforeEach 的普通网络失败：这次 fetch 全部按「用户中止」拒绝，
+      // 等价于用户按了停止后请求被断 —— 链路必须把它识别为 aborted 而非 error
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new DOMException('The user aborted a request.', 'AbortError')
+        }),
+      )
+      const w = await mountSession()
+      const ta = w.find('textarea')
+      await ta.setValue('停止测试')
+      await nextTick()
+      const btn = w.findAll('button').find((b) => b.text().includes('发送'))
+      await btn!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      const s = useSessions().sessions.value[0]
+      const last = s.messages[s.messages.length - 1]
+      expect(last.role).toBe('assistant')
+      expect(last.aborted).toBe(true)
+      expect(last.error).toBeUndefined()
+      expect(last.pending).toBe(false)
+      // 界面上显示「已停止」而不是红色错误条
+      expect(w.text()).toContain('已停止')
+    })
   })
 
   describe('输入框光标保护（field-sizing 收手判定）', () => {

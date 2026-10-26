@@ -22,7 +22,7 @@
  */
 
 import type { ModelProvider, ToolCallRecord } from '@/types'
-import { chat, type LlmMessage, type ToolSchema } from './llm'
+import { chat, abortError, type LlmMessage, type ToolSchema } from './llm'
 import { activeTools, availabilityNote, toolByName, toSchemas, type ToolContext } from './tools'
 
 export interface ToolCallDetail {
@@ -108,6 +108,8 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   let rounds = 0
 
   for (let round = 1; round <= maxRounds; round++) {
+    // 用户点了「停止」：立刻停，别再去问模型/跑工具
+    if (opts.signal?.aborted) throw abortError()
     rounds = round
     cb.onRound?.(round)
 
@@ -123,6 +125,8 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
         cb.onAnswerDelta?.(chunk)
       },
     })
+    // chat 返回后也可能已被中止（服务端恰好发完）：同样直接停
+    if (opts.signal?.aborted) throw abortError()
 
     usage.prompt += res.usage?.prompt ?? 0
     usage.completion += res.usage?.completion ?? 0
@@ -157,6 +161,8 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
     })
 
     for (const tc of res.toolCalls) {
+      // 停止信号来了：不再执行下一个工具
+      if (opts.signal?.aborted) throw abortError()
       const tool = toolByName(tc.name)
       const t0 = performance.now()
       const detail: ToolCallDetail = {
@@ -185,6 +191,9 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
           detail.error = r.error
           detail.content = r.content
         } catch (e) {
+          // ⭐ 中止不是「工具失败」：信号已断就向上抛，让整个 Agent 立刻停，
+          // 不要再记录一条失败结果、继续问模型（那样看起来像「还在跑」）。
+          if (opts.signal?.aborted) throw abortError()
           const msg = e instanceof Error ? e.message : String(e)
           detail.ok = false
           detail.error = msg
@@ -216,6 +225,7 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   }
 
   // 轮数用尽：让模型基于已有工具结果做最后一次纯文本总结
+  if (opts.signal?.aborted) throw abortError()
   messages.push({
     role: 'user',
     content:

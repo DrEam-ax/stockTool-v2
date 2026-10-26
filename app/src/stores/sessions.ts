@@ -328,12 +328,24 @@ export function useSessions() {
       assistant.pending = false
     } catch (e) {
       assistant.pending = false
-      assistant.error = e instanceof Error ? e.message : String(e)
+      // 用户主动停止不是错误：标记 aborted，UI 显示「已停止」而非红条
+      if (isAbort(e)) {
+        assistant.aborted = true
+      } else {
+        assistant.error = e instanceof Error ? e.message : String(e)
+      }
     } finally {
       streamingId.value = null
       abortController = null
       await save(s)
     }
+  }
+
+  /** 判断异常是不是「用户主动停止」（AbortError / 我们抛的 DOMException） */
+  function isAbort(e: unknown): boolean {
+    if (e instanceof DOMException && e.name === 'AbortError') return true
+    if (e instanceof Error && /aborted|AbortError|已取消/i.test(e.message)) return true
+    return false
   }
 
   function abort() {
@@ -482,7 +494,13 @@ export function useSessions() {
         side.hitRoundLimit = result.hitRoundLimit
         side.usage = result.usage
       } catch (e) {
-        side.error = e instanceof Error ? e.message : String(e)
+        // 用户主动停止：两侧都标记「已停止」，不显示为错误
+        if (isAbort(e)) {
+          assistant.aborted = true
+          side.aborted = true
+        } else {
+          side.error = e instanceof Error ? e.message : String(e)
+        }
       }
     }
 

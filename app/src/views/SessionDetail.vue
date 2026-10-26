@@ -882,6 +882,9 @@ const memoryHint = computed(() => {
                 <div v-if="activeSide(m)?.hitRoundLimit" class="alert warn" style="margin-top: 6px">
                   已达到工具调用轮数上限，这一侧是强制收尾的，可能不完整。
                 </div>
+                <div v-if="activeSide(m)?.aborted" class="muted" style="margin-top: 6px">
+                  ⏹ 已停止（你主动中断，这一侧没有继续生成）
+                </div>
                 <div v-if="activeSide(m)?.error" style="margin-top: 6px; white-space: pre-wrap">
                   {{ activeSide(m)!.error }}
                 </div>
@@ -900,6 +903,9 @@ const memoryHint = computed(() => {
               <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
               <div v-if="m.hitRoundLimit" class="alert warn" style="margin-top: 6px">
                 已达到工具调用轮数上限，这条回答是强制收尾的，可能不完整。
+              </div>
+              <div v-if="m.aborted" class="muted" style="margin-top: 6px">
+                ⏹ 已停止（你主动中断，不再继续生成）
               </div>
               <div v-if="m.error" style="margin-top: 6px; white-space: pre-wrap">
                 {{ m.error }}
@@ -942,7 +948,7 @@ const memoryHint = computed(() => {
               <span v-else-if="m.usage" class="muted">
                 {{ m.usage.prompt }}+{{ m.usage.completion }} tok
               </span>
-              <span v-if="m.error" class="btn sm ghost" @click="sessions.retryLast(session!.id)">
+              <span v-if="m.error && !m.aborted" class="btn sm ghost" @click="sessions.retryLast(session!.id)">
                 重试
               </span>
             </template>

@@ -119,6 +119,11 @@ function translateError(e: unknown, baseUrl: string): LlmError {
   return new LlmError(msg, undefined, 'network')
 }
 
+/** 统一的中止异常：上层（agent/sessions）用 name==='AbortError' 识别「用户主动停止」 */
+export function abortError(): DOMException {
+  return new DOMException('操作已中止', 'AbortError')
+}
+
 async function readErrorBody(res: Response): Promise<string> {
   try {
     const t = await res.text()
@@ -224,6 +229,8 @@ export async function chat(
   }
 
   // ---------------- 流式 ----------------
+  // 先检查中止：signal 已断就不要再发起读取
+  if (opts.signal?.aborted) throw abortError()
   const reader = res.body?.getReader?.()
   if (!reader) {
     // 原生 HTTP（Capacitor 的 CapacitorHttp）不提供可读流。
@@ -241,6 +248,9 @@ export async function chat(
   const slots: Record<number, { id: string; name: string; args: string }> = {}
 
   while (true) {
+    // ⭐ 每读一块都查中止：真机上 abort 不一定让 reader.read() 立刻 reject
+    // （部分 WebView 会继续吐已缓冲的数据），不查就停不下来、内容继续往外蹦。
+    if (opts.signal?.aborted) throw abortError()
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
