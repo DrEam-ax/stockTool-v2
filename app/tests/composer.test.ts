@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { readCaret, restoreCaret, shouldUseNativeFieldSizing } from '@/lib/composer'
+import { readCaret, restoreCaret, shouldUseNativeFieldSizing, imeCaretTarget } from '@/lib/composer'
 
 function makeTextarea(value = '', attach = true): HTMLTextAreaElement {
   const el = document.createElement('textarea')
@@ -114,5 +114,57 @@ describe('field-sizing 收手判定', () => {
 
   it('桌面浏览器即使支持也走 JS（不受输入法组合态影响，行为保持不变）', () => {
     expect(shouldUseNativeFieldSizing('Mozilla/5.0 (Windows NT 10.0)', yes)).toBe(false)
+  })
+})
+
+describe('IME 光标锚定（imeCaretTarget）', () => {
+  // 场景：光标在「贵州茅台怎么样」第 3 个字符后，输入法上屏「的」
+  // 文本 "贵州茅台怎么样" → "贵州的茅台怎么样"，光标应停在 3+1=4
+
+  it('上屏后光标被甩到末尾 → 返回锚点+新增长度', () => {
+    const target = imeCaretTarget(
+      3, // 组合开始前光标
+      6, // 组合开始前文本长度 "贵州茅台怎么样"
+      7, // 上屏后长度 "贵州的茅台怎么样"
+      7, // 上屏后光标在末尾（被甩）
+      false, // 已出组合态
+      false, // 无选区
+    )
+    expect(target).toBe(4)
+  })
+
+  it('上屏后光标位置本来就对 → 不修正', () => {
+    const target = imeCaretTarget(
+      3, 6, 7,
+      4, // 光标正确停在插入处
+      false, false,
+    )
+    expect(target).toBeNull()
+  })
+
+  it('输入前光标本来就在末尾 → 上屏后在末尾是正常行为，不修正', () => {
+    expect(imeCaretTarget(6, 6, 9, 9, false, false)).toBeNull()
+  })
+
+  it('组合态中绝不修正（输入法全权管理光标）', () => {
+    expect(imeCaretTarget(3, 6, 7, 7, true, false)).toBeNull()
+  })
+
+  it('有选区（用户正在选词）→ 不修正', () => {
+    expect(imeCaretTarget(3, 6, 7, 7, false, true)).toBeNull()
+  })
+
+  it('光标不在末尾（如用户上屏后自己点了一下中间）→ 不修正', () => {
+    expect(imeCaretTarget(3, 6, 7, 5, false, false)).toBeNull()
+  })
+
+  it('锚点文本比现在长（内容被删除/替换）→ 期望位置越界则不修正', () => {
+    // 纯函数算出负数（不存在的插入位置），宁可不修正也不乱放光标
+    expect(imeCaretTarget(2, 8, 5, 5, false, false)).toBeNull()
+  })
+
+  it('回车上屏英文（compositionend 被吞后手动触发）同样能修正', () => {
+    // 光标在 2，输入 nihao 回车上屏 → 文本长 2+5=7，光标被甩到 7
+    expect(imeCaretTarget(2, 4, 9, 9, false, false)).toBe(7)
   })
 })

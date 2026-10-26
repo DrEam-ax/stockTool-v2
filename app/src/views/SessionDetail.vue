@@ -128,6 +128,7 @@ function onFsBlur() {
     input.value = el.value
   }
   composing = false
+  imeAnchor = null
 }
 
 /**
@@ -462,6 +463,11 @@ function onComposerInput() {
 function onCompositionStart() {
   composing = true
   cancelPendingResize()
+  // ⭐ IME 光标锚点：记下组合开始前（也就是上屏文本要插入处）的光标位置。
+  // 即使 JS 组合态完全收手，部分输入法/内核 commitText 时仍会把光标甩到
+  // 末尾；上屏稳定后靠这个锚点把光标拉回「原位置 + 新增文本长度」。
+  const el = composerFs.value ? fsEl.value : taEl.value
+  if (el) imeAnchor = { start: el.selectionStart ?? 0, value: el.value }
 }
 
 /**
@@ -482,6 +488,8 @@ function onCompositionEnd() {
   const el = composerFs.value ? fsEl.value : taEl.value
   if (el && el.value !== input.value) input.value = el.value
   scheduleResize(180)
+  // ⭐ 上屏稳定后检查光标是否被甩到末尾，甩了就用锚点拉回
+  scheduleImeFix(400)
 }
 
 /** 输入框最大高度（约 5 行）。超过就内部滚动，不能无限长高把聊天区挤没了 */
@@ -504,7 +512,14 @@ const COMPOSER_MAX_H = 130
  * 输入框高度由浏览器自己按内容撑开，**JS 不需要也不应该再碰 height**。
  * 判定逻辑见 `lib/composer.ts`（抽成纯函数便于单测防回归）。
  */
-import { HAS_FIELD_SIZING, inImeComposition, readCaret, restoreCaret, type Caret } from '@/lib/composer'
+import {
+  HAS_FIELD_SIZING,
+  inImeComposition,
+  readCaret,
+  restoreCaret,
+  imeCaretTarget,
+  type Caret,
+} from '@/lib/composer'
 
 /**
  * 输入框随内容变高，并保证光标行留在可视区内。
@@ -586,6 +601,50 @@ function cancelPendingResize() {
   }
 }
 
+/**
+ * ⭐ IME 光标锚定（本轮根治「拼音回车 / 汉字上屏后光标落末尾」）。
+ *
+ * 为什么在高度调整之外还要这一层：Android WebView 上即使组合态完全收手
+ * （不重排、不读布局、不动光标），部分输入法/内核在 commitText
+ * （候选字上屏、回车上屏英文）时仍会把光标甩到文本末尾。
+ * JS 最后能做的：组合开始前（compositionstart）记下锚点，
+ * 上屏稳定后（compositionend / 组合态回车）检查光标——
+ * 若在末尾且不在期望位置，就拉回「锚点 + 本次新增文本长度」。
+ * 判定收敛在 `imeCaretTarget` 纯函数里，可单测。
+ */
+let imeAnchor: { start: number; value: string } | null = null
+let imeFixTimer: number | null = null
+
+function scheduleImeFix(delay: number) {
+  if (imeFixTimer != null) clearTimeout(imeFixTimer)
+  imeFixTimer = window.setTimeout(() => {
+    imeFixTimer = null
+    fixImeCaret()
+  }, delay)
+}
+
+function fixImeCaret() {
+  const el = composerFs.value ? fsEl.value : taEl.value
+  if (!el || !imeAnchor) return
+  const anchor = imeAnchor
+  imeAnchor = null
+  const target = imeCaretTarget(
+    anchor.start,
+    anchor.value.length,
+    el.value.length,
+    el.selectionStart ?? 0,
+    composing || inImeComposition(el),
+    (el.selectionStart ?? 0) !== (el.selectionEnd ?? 0),
+  )
+  if (target != null) {
+    try {
+      el.setSelectionRange(target, target)
+    } catch {
+      /* 忽略：个别内核不支持 setSelectionRange */
+    }
+  }
+}
+
 /** 输入框获得焦点：先按当前内容对一次高度（用户可能刚切回来） */
 function startComposerWatch() {
   scheduleResize(0)
@@ -614,11 +673,16 @@ function onComposerBlur() {
   // 万一 compositionend 没触发（部分输入法在失焦时直接收起键盘），
   // 这里把组合态清掉，否则高度调整会一直被挡住
   composing = false
+  imeAnchor = null
   stopComposerWatch()
 }
 
 // 离开会话页时把待执行的调整取消掉，别在后台空转
 onUnmounted(cancelPendingResize)
+onUnmounted(() => {
+  if (imeFixTimer != null) clearTimeout(imeFixTimer)
+  imeFixTimer = null
+})
 onUnmounted(clearDockTimer)
 
 async function onAttach(e: Event) {
@@ -670,7 +734,14 @@ async function onSend() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    // 组合态回车 = 输入法把拼音直接上屏（部分输入法不派发 compositionend，
+    // 我们的 composing 标志会卡在 true）。不能 preventDefault（否则 IME 不提交
+    // 文本），也不发送；安排一次光标修正兜底，等 IME 把文字放进来后拉回锚点。
+    if (e.isComposing || composing) {
+      scheduleImeFix(400)
+      return
+    }
     e.preventDefault()
     onSend()
   }

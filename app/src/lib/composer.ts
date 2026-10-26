@@ -71,6 +71,39 @@ export function inImeComposition(el: unknown): boolean {
 }
 
 /**
+ * IME 光标锚定：输入法上屏后光标应落在哪。
+ *
+ * 为什么需要：Android WebView 上即使 JS 在组合态完全收手（不重排、不读布局、
+ * 不动光标），部分输入法/内核在 commitText（候选词上屏、回车上屏英文）时
+ * 仍会把光标甩到文本末尾。JS 能做的最后一道防线是——组合开始前记住光标
+ * 锚点，等上屏稳定后若光标在末尾，就拉回「原位置 + 本次新增文本长度」。
+ *
+ * 返回应修正到的位置；不需要修正时返回 null：
+ *  · 组合态中绝不返回修正值（输入法全权管理光标，JS 一碰就是帮倒忙）
+ *  · 输入前光标本来就在末尾 → 上屏后在末尾是正常行为，不修正
+ *  · 上屏后光标不在末尾 → 引擎/输入法自己放对了，不修正
+ *  · 有选区（用户正在选词/复制）→ 不修正
+ *  · 光标在末尾 且 与期望位置不同 → 返回期望位置
+ */
+export function imeCaretTarget(
+  anchorStart: number,
+  anchorLen: number,
+  nowLen: number,
+  nowCaret: number,
+  composing: boolean,
+  hasSelection: boolean,
+): number | null {
+  if (composing || hasSelection) return null
+  if (anchorStart >= anchorLen) return null
+  if (nowCaret !== nowLen) return null
+  const expected = anchorStart + (nowLen - anchorLen)
+  // 越界的期望位置（删除/替换场景可能算出负数或超长）宁可不修正，
+  // 也不把光标放到不可能的位置
+  if (nowCaret !== expected && expected >= 0 && expected <= nowLen) return expected
+  return null
+}
+
+/**
  * 把光标还原到快照位置；不需要还原时返回 false。
  *
  * 保守策略：只在**仍然聚焦**且**光标确实被移走**时才动它，
